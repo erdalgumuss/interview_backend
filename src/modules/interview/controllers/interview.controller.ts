@@ -3,6 +3,7 @@ import { InterviewService } from '../services/interview.service';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 import { AppError } from '../../../middlewares/error/appError';
 import { ErrorCodes } from '../../../constants/errors';
+import mongoose from 'mongoose';
 
 class InterviewController {
     private interviewService: InterviewService;
@@ -38,7 +39,7 @@ class InterviewController {
      */
     public getAllInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            if (req.user?.role !== 'admin') {
+            if (req.user?.role !== 'user') {
                 throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 403);
             }
 
@@ -137,6 +138,104 @@ class InterviewController {
             next(error);
         }
     }
+
+    public async updateInterviewStatus(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { id } = req.params;
+            const { newStatus } = req.body;
+            const userId = req.user?.id;
+    
+            if (!userId) {
+                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+            }
+    
+            const interview = await this.interviewService.getInterviewById(id);
+            if (!interview) {
+                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            }
+    
+            // Yalnızca mülakatın sahibi değiştirebilir
+            if (interview.createdBy.userId.toString() !== userId) {
+                throw new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403);
+            }
+    
+            // Durum değiştirme kurallarını uygula
+            if (interview.status === 'draft' && newStatus === 'published') {
+                interview.status = 'published';
+            } else if (interview.status === 'published' && newStatus === 'inactive') {
+                interview.status = 'inactive';
+            } else {
+                throw new AppError('Invalid status transition', ErrorCodes.BAD_REQUEST, 400);
+            }
+    
+            const updatedInterview = await this.interviewService.updateInterview(id, { status: interview.status });
+            res.json({ success: true, data: updatedInterview });
+    
+        } catch (error) {
+            next(error);
+        }
+    }
+    public async generateInterviewLink(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { id } = req.params;
+            const { expirationDate } = req.body; // Linkin süresi
+    
+            const interview = await this.interviewService.getInterviewById(id);
+            if (!interview) {
+                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            }
+    
+            const link = `https://myapp.com/interview/${id}`;
+            interview.interviewLink = {
+                link,
+                expirationDate: expirationDate ? new Date(expirationDate) : undefined,
+            };
+    
+            await interview.save();
+    
+            res.json({ success: true, data: interview.interviewLink });
+        } catch (error) {
+            next(error);
+        }
+    }
+    public async updateInterviewQuestions(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { id } = req.params;
+            const { questions } = req.body; // Yeni soru listesi
+    
+            const interview = await this.interviewService.getInterviewById(id);
+            if (!interview) {
+                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            }
+    
+            interview.questions = questions;
+            await interview.save();
+    
+            res.json({ success: true, data: interview.questions });
+        } catch (error) {
+            next(error);
+        }
+    }
+    public async updatePersonalityTest(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { id } = req.params;
+            const { personalityTestId } = req.body;
+    
+            const interview = await this.interviewService.getInterviewById(id);
+            if (!interview) {
+                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            }
+    
+            interview.personalityTestId = personalityTestId ? new mongoose.Types.ObjectId(personalityTestId) : undefined;
+            await interview.save();
+    
+            res.json({ success: true, data: interview });
+        } catch (error) {
+            next(error);
+        }
+    }
+    
+    
 }
 
 export default new InterviewController();

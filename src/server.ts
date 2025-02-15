@@ -6,10 +6,15 @@ import morgan from 'morgan';
 import connectDB from './config/db';
 import rootRouter from './routes/index';
 import cookieParser from 'cookie-parser';
+import { interviewStatusJob } from './jobs/interviewStatus.job';
+
+
+
 
 dotenv.config();
 
 const app = express();
+interviewStatusJob(); // CRON Job başlat!
 
 // Middleware'ler
 app.use(express.json());

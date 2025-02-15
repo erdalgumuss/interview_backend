@@ -18,23 +18,15 @@ export class InterviewService {
      */
     public async createInterview(
       data: CreateInterviewDTO,
-      userId: string,
+      userId: string
   ): Promise<IInterview> {
-      // 1️⃣ Gelen expirationDate değerini loglayalım
-      console.log('Received expirationDate:', data.expirationDate);
+      console.log('📥 Gelen Questions:', data.questions); // Debug için log
   
-      // 2️⃣ Expiration Date Format Kontrolü
       const parsedExpirationDate = new Date(data.expirationDate);
       if (isNaN(parsedExpirationDate.getTime())) {
           throw new Error('Invalid expiration date format');
       }
   
-      // 3️⃣ Title Eksikse Hata Fırlat
-      if (!data.title) {
-          throw new Error('Interview title is required.');
-      }
-  
-      // 4️⃣ DTO ile gelen veriyi doğrula
       const interviewData: Partial<IInterview> = {
           title: data.title,
           expirationDate: parsedExpirationDate,
@@ -42,12 +34,11 @@ export class InterviewService {
               userId: new mongoose.Types.ObjectId(userId),
           },
           personalityTestId: data.personalityTestId ? new mongoose.Types.ObjectId(data.personalityTestId) : undefined,
+          questions: data.questions ?? [], // 📌 Questions alanı eklendi
       };
   
       return this.interviewRepository.createInterview(interviewData);
   }
-  
-      
 
 
 
