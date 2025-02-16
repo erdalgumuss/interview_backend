@@ -2,22 +2,24 @@ import Joi from 'joi';
 
 /**
  * Mülakat oluşturma için DTO şeması
- */
-export const createInterviewSchema = Joi.object({
+ */export const createInterviewSchema = Joi.object({
     title: Joi.string().required().min(5).max(100),
     
     expirationDate: Joi.alternatives([
       Joi.date().iso(),
-      Joi.number().integer().min(1000000000000) // Timestamp formatı da kabul et
-  ]).required().messages({
+      Joi.number().integer().min(1000000000000) // Timestamp desteği
+    ]).required().messages({
       'date.base': 'Expiration date must be a valid ISO date or timestamp.',
       'any.required': 'Expiration date is required.'
-  }),
+    }),
+
     personalityTestId: Joi.string().optional(),
+
     stages: Joi.object({
-        personalityTest: Joi.boolean().default(false),
-        questionnaire: Joi.boolean().default(true),
-    }).required(),
+        personalityTest: Joi.boolean().optional().default(false),
+        questionnaire: Joi.boolean().optional().default(true),
+    }).optional().default({ personalityTest: false, questionnaire: true }),
+
     questions: Joi.array().items(
         Joi.object({
             questionText: Joi.string().required(),
@@ -31,7 +33,7 @@ export const createInterviewSchema = Joi.object({
                 requiredSkills: Joi.array().items(Joi.string()).required(),
             }).required(),
         })
-    ).required(),
+    ).optional().default([]),
 });
 
 

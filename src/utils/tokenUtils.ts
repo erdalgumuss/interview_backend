@@ -65,3 +65,7 @@ export function generatePasswordResetToken(): { token: string; expires: Date } {
     const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 dakika geçerli
     return { token, expires };
 }
+
+export const generateCandidateToken = (applicationId: string) => {
+  return jwt.sign({ applicationId }, process.env.JWT_SECRET!, { expiresIn: '2h' });
+};

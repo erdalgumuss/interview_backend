@@ -1,5 +1,3 @@
-// src/modules/interview/validators/createInterview.validator.ts
-
 import Joi from 'joi';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 
@@ -9,9 +7,11 @@ export const createInterviewSchema = Joi.object<CreateInterviewDTO>({
         'string.empty': 'Interview title cannot be empty.'
     }),
 
-    expirationDate: Joi.date().iso().required().messages({
-        'date.base': 'Expiration date must be a valid date.',
-        'date.format': 'Expiration date must be in ISO 8601 format.',
+    expirationDate: Joi.alternatives([
+        Joi.date().iso(),
+        Joi.number().integer().min(1000000000000) // ✅ Timestamp desteği
+    ]).required().messages({
+        'date.base': 'Expiration date must be a valid ISO date or timestamp.',
         'any.required': 'Expiration date is required.'
     }),
 
@@ -24,7 +24,7 @@ export const createInterviewSchema = Joi.object<CreateInterviewDTO>({
     stages: Joi.object({
         personalityTest: Joi.boolean().default(false),
         questionnaire: Joi.boolean().default(true)
-    }).optional(),
+    }).optional().default({ personalityTest: false, questionnaire: true }),
 
     questions: Joi.array().items(
         Joi.object({
@@ -37,8 +37,7 @@ export const createInterviewSchema = Joi.object<CreateInterviewDTO>({
             aiMetadata: Joi.object({
                 complexityLevel: Joi.string().valid('low', 'medium', 'high').required(),
                 requiredSkills: Joi.array().items(Joi.string()).required(),
-                // keywordMatchScore şimdilik cevaplarda hesaplanacağı için opsiyonel
             }).required()
         })
-    ).optional()
+    ).optional().default([]),
 });

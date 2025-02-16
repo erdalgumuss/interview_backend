@@ -100,6 +100,7 @@ export interface IApplication extends Document {
     personalityTestResults?: IPersonalityTestResults;
     responses: IApplicationResponse[];
     aiAnalysisResults: mongoose.Types.ObjectId[]; // Birden fazla AIAnalysis kaydı
+    latestAIAnalysisId?: mongoose.Types.ObjectId;
     generalAIAnalysis?: {
         overallScore?: number;
         technicalSkillsScore?: number;
@@ -111,6 +112,8 @@ export interface IApplication extends Document {
         recommendation?: string;
     };
     allowRetry: boolean;
+    maxRetryAttempts?: number;
+    retryCount?: number;
     supportRequests: ISupportRequest[];
     createdAt: Date;
     updatedAt: Date;
@@ -121,7 +124,6 @@ export interface IApplication extends Document {
  *  Mongoose Schema Tanımlaması
  * -----------------------------
  */
-
 const ApplicationSchema: Schema<IApplication> = new Schema(
     {
         interviewId: {
@@ -135,7 +137,8 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             email: { type: String, required: true },
             phone: { type: String, required: true },
             phoneVerified: { type: Boolean, default: false },
-            verificationCode: { type: String },
+            verificationCode: { type: String, select: false },
+            verificationExpiresAt: { type: Date, default: () => new Date(Date.now() + 10 * 60 * 1000) }, 
             kvkkConsent: { type: Boolean, default: false },
             education: [
                 {
@@ -169,7 +172,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             default: 'pending',
         },
         personalityTestResults: {
-            testId: { type: mongoose.Schema.Types.ObjectId, ref: 'PersonalityTest' },
+            testId: { type: mongoose.Schema.Types.ObjectId, /*ref: 'PersonalityTest'*/ },
             completed: { type: Boolean, default: false },
             scores: {
                 openness: { type: Number, default: 0 },
@@ -180,24 +183,10 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             },
             personalityFit: { type: Number, default: 0 },
         },
-        responses: [
-            {
-                questionId: { type: mongoose.Schema.Types.ObjectId, required: true },
-                videoUrl: { type: String },
-                textAnswer: { type: String },
-                aiAnalysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'AIAnalysis' },
-                facialAnalysis: {
-                    emotions: { type: Map, of: Number },
-                    engagement: { type: Number },
-                },
-            },
-        ],
-        aiAnalysisResults: [
-            {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'AIAnalysis',
-            },
-        ],
+        latestAIAnalysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'AIAnalysis' },
+        allowRetry: { type: Boolean, default: false },
+        maxRetryAttempts: { type: Number, default: 1 },
+        retryCount: { type: Number, default: 0 },
         generalAIAnalysis: {
             overallScore: { type: Number },
             technicalSkillsScore: { type: Number },
@@ -205,21 +194,18 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             problemSolvingScore: { type: Number },
             personalityMatchScore: { type: Number },
             strengths: [{ type: String }],
-            areasForImprovement: [{ type: String }],
+            areasForImprovement: [
+                {
+                    area: { type: String },
+                    recommendedAction: { type: String }
+                }
+            ],
             recommendation: { type: String },
-        },
-        allowRetry: { type: Boolean, default: false },
-        supportRequests: [
-            {
-                timestamp: { type: Date, default: Date.now },
-                message: { type: String, required: true },
-            },
-        ],
+        }
     },
-    {
-        timestamps: true, // createdAt ve updatedAt otomatik eklenir
-    }
+    { timestamps: true }
 );
+
 
 /**
  * -----------------------------

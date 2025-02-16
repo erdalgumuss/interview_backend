@@ -4,6 +4,7 @@ import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 import { AppError } from '../../../middlewares/error/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import mongoose from 'mongoose';
+import { InterviewStatus } from '../models/interview.model'; // Adjust the path as necessary
 
 class InterviewController {
     private interviewService: InterviewService;
@@ -12,35 +13,30 @@ class InterviewController {
         this.interviewService = new InterviewService();
     }
 
-
     public async createInterview(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            console.log('📥 Gelen Body:', req.body); // Log ekledik
+            console.log('📥 Gelen Body:', req.body);
 
             const body = req.body as CreateInterviewDTO;
             const userId = req.user?.id as string;
 
-            if (!userId ) {
-             res.status(400).json({ success: false, message: "User authentication failed" });
-                return;
+            if (!userId) {
+                return next(new AppError('User authentication failed', ErrorCodes.UNAUTHORIZED, 401));
             }
 
             const newInterview = await this.interviewService.createInterview(body, userId);
-
-             res.status(201).json({ success: true, data: newInterview });
-             return;
+            res.status(201).json({ success: true, data: newInterview });
         } catch (error) {
             next(error);
         }
     };
-
     /**
      * Tüm mülakatları getir (Sadece Admin)
      */
     public getAllInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            if (req.user?.role !== 'user') {
-                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 403);
+            if (req.user?.role !== 'admin') {
+                return next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 403));
             }
 
             const interviews = await this.interviewService.getAllInterviews();
@@ -144,60 +140,64 @@ class InterviewController {
             const { id } = req.params;
             const { newStatus } = req.body;
             const userId = req.user?.id;
-    
+
             if (!userId) {
-                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+                return next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401));
             }
-    
+
             const interview = await this.interviewService.getInterviewById(id);
             if (!interview) {
-                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+                return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
             }
-    
-            // Yalnızca mülakatın sahibi değiştirebilir
+
             if (interview.createdBy.userId.toString() !== userId) {
-                throw new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403);
+                return next(new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403));
             }
-    
-            // Durum değiştirme kurallarını uygula
-            if (interview.status === 'draft' && newStatus === 'published') {
-                interview.status = 'published';
-            } else if (interview.status === 'published' && newStatus === 'inactive') {
-                interview.status = 'inactive';
+
+            if (interview.status === InterviewStatus.DRAFT && newStatus === InterviewStatus.PUBLISHED) {
+                interview.status = InterviewStatus.PUBLISHED;
+            } else if (interview.status === InterviewStatus.PUBLISHED && newStatus === InterviewStatus.INACTIVE) {
+                interview.status = InterviewStatus.INACTIVE;
             } else {
-                throw new AppError('Invalid status transition', ErrorCodes.BAD_REQUEST, 400);
+                return next(new AppError('Invalid status transition', ErrorCodes.BAD_REQUEST, 400));
             }
-    
+
             const updatedInterview = await this.interviewService.updateInterview(id, { status: interview.status });
             res.json({ success: true, data: updatedInterview });
-    
+
         } catch (error) {
             next(error);
         }
     }
+
     public async generateInterviewLink(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
-            const { expirationDate } = req.body; // Linkin süresi
-    
+            const { expirationDate } = req.body;
+
             const interview = await this.interviewService.getInterviewById(id);
             if (!interview) {
-                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+                return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
             }
-    
+
             const link = `https://myapp.com/interview/${id}`;
-            interview.interviewLink = {
-                link,
-                expirationDate: expirationDate ? new Date(expirationDate) : undefined,
-            };
-    
-            await interview.save();
-    
-            res.json({ success: true, data: interview.interviewLink });
+            const updatedInterview = await this.interviewService.updateInterview(interview.id, {
+                interviewLink: {
+                    link,
+                    expirationDate: expirationDate ? new Date(expirationDate) : undefined,
+                }
+            });
+
+            if (!updatedInterview) {
+                return next(new AppError('Failed to update interview', ErrorCodes.INTERNAL_SERVER_ERROR, 500));
+            }
+            res.json({ success: true, data: updatedInterview.interviewLink });
         } catch (error) {
             next(error);
         }
     }
+
+
     public async updateInterviewQuestions(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;

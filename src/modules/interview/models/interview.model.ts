@@ -19,7 +19,14 @@ export interface IInterviewQuestion {
         keywordMatchScore?: number;
     };
 }
-
+export enum InterviewStatus {
+    ACTIVE = 'active',
+    COMPLETED = 'completed',
+    PUBLISHED = 'published',
+    DRAFT = 'draft',
+    INACTIVE = 'inactive'
+  }
+  
 /**
  * Asıl Interview dokümanı için kullanılacak interface
  * timestamps: true kullanıldığı için createdAt & updatedAt opsiyonel tutulabilir.
@@ -30,7 +37,7 @@ export interface IInterview extends Document {
     createdBy: {
         userId: mongoose.Types.ObjectId;
     };
-    status: 'active' | 'completed' | 'published' | 'draft' | 'inactive';
+    status: InterviewStatus;
     personalityTestId?: mongoose.Types.ObjectId; // Ref to PersonalityTest
     stages: {
         personalityTest: boolean;
@@ -87,12 +94,12 @@ const InterviewSchema = new Schema<IInterview>(
         },
         status: {
             type: String,
-            enum: ['active', 'completed', 'published', 'draft', 'inactive'],
-            default: 'active',
+            enum: Object.values(InterviewStatus),
+            default: InterviewStatus.ACTIVE,
         },
         personalityTestId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'PersonalityTest',
+            //: 'PersonalityTest',
         },
         stages: {
             personalityTest: { type: Boolean, default: false },
