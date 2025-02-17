@@ -55,6 +55,7 @@ export async function verifyEmail(req: Request, res: Response, next: NextFunctio
         await user.save();
 
         res.json({ success: true, message: 'Email verified successfully' });
+        
     } catch (err) {
         next(err);
     }

@@ -4,43 +4,70 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 /**
  * -----------------------------
+ *  Soru Tipleri Enum
+ * -----------------------------
+ */
+type QuestionType = 'multiple_choice' | 'rating' | 'open_text';
+
+/**
+ * -----------------------------
  *  ITestQuestion Interface
  * -----------------------------
- * Kişilik testi içerisindeki tek bir soruya ait temel yapı.
  */
 export interface ITestQuestion {
-    _id?: mongoose.Types.ObjectId; // Sorulara otomatik ID vermek istersen opsiyonel tutabilirsin
+    _id?: mongoose.Types.ObjectId;
     questionText: string;
-    // İhtiyaca göre farklı soru tipleri (Seçmeli, derecelendirme vb.) eklenebilir
-    // choiceOptions?: string[];
+    questionType: QuestionType; // Soru tipi: Çoktan seçmeli, Derecelendirme, Açık uçlu
+    choices?: string[]; // Eğer çoktan seçmeli ise kullanılacak seçenekler
+    ratingScale?: number; // Eğer rating ise, kaç üzerinden olduğu (default 5)
+
+    /**
+     * AI Analizi için kişilik özellikleri üzerindeki etkiler.
+     */
+    personalityTraitsImpact?: {
+        openness?: number;
+        conscientiousness?: number;
+        extraversion?: number;
+        agreeableness?: number;
+        neuroticism?: number;
+    };
 }
 
 /**
  * -----------------------------
  *  IPersonalityTest Interface
  * -----------------------------
- * Ana kişilik testi dokümanı.
  */
 export interface IPersonalityTest extends Document {
-    testName: string; // Ör: 'BigFive', 'DISC', 'MBTI' vb.
+    testName: string; // Örn: 'Big Five', 'MBTI'
     description?: string;
     questions: ITestQuestion[];
-    createdAt?: Date; // timestamps: true sayesinde otomatik, bu yüzden opsiyonel
-    updatedAt?: Date; // timestamps: true sayesinde otomatik, bu yüzden opsiyonel
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 /**
  * -----------------------------
- *  Soru Alt Şeması
+ *  Test Soru Şeması
  * -----------------------------
  */
 const TestQuestionSchema = new Schema<ITestQuestion>(
     {
         questionText: { type: String, required: true },
-        // choiceOptions: [{ type: String }] // Çoktan seçmeli sorular için örnek
+        questionType: { type: String, enum: ['multiple_choice', 'rating', 'open_text'], required: true },
+        choices: [{ type: String }], // Çoktan seçmeli seçenekler
+        ratingScale: { type: Number, default: 5 }, // Derecelendirme için
+
+        personalityTraitsImpact: {
+            openness: { type: Number, default: 0 },
+            conscientiousness: { type: Number, default: 0 },
+            extraversion: { type: Number, default: 0 },
+            agreeableness: { type: Number, default: 0 },
+            neuroticism: { type: Number, default: 0 },
+        },
     },
     {
-        _id: false, // Her soruya otomatik _id üretmek istemiyorsan 'false' ayarı kullanabilirsin
+        _id: false, // Alt doküman olduğu için ayrı bir _id istemiyoruz.
     }
 );
 
@@ -56,7 +83,7 @@ const PersonalityTestSchema = new Schema<IPersonalityTest>(
         questions: [TestQuestionSchema],
     },
     {
-        timestamps: true, // createdAt & updatedAt otomatik olarak eklenir
+        timestamps: true,
     }
 );
 
@@ -65,7 +92,4 @@ const PersonalityTestSchema = new Schema<IPersonalityTest>(
  *  Model Oluşturma
  * -----------------------------
  */
-export default mongoose.model<IPersonalityTest>(
-    'PersonalityTest',
-    PersonalityTestSchema
-);
+export default mongoose.model<IPersonalityTest>('PersonalityTest', PersonalityTestSchema);

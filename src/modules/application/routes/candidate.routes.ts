@@ -4,7 +4,7 @@ import { Router } from 'express';
 import candidateController from '../controllers/candidate.controller';
 import { asyncHandler } from '../../../middlewares/asyncHandler';
 import { authenticateCandidate } from '../../../middlewares/auth';  // ✅ Token doğrulama için
-import rateLimitMiddleware from '../../../middlewares/rateLimitMiddleware';  // ✅ OTP spam'ı engellemek için
+import { rateLimitMiddleware } from '../../../middlewares/rateLimitMiddleware';  // ✅ OTP spam'ı engellemek için
 import { validateRequest } from '../../../middlewares/validationMiddleware'; // ✅ Joi DTO validasyonu
 import { createApplicationSchema } from '../dtos/createApplication.dto';
 import { verifyOtpSchema } from '../dtos/otpVerify.dto';

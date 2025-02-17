@@ -1,12 +1,9 @@
-// src/modules/application/models/application.model.ts
-
 import mongoose, { Schema, Document } from 'mongoose';
 
 /**
  * ---------------------------
  *  ICandidateProfile Interface
  * ---------------------------
- * Adayın kişisel bilgileri, eğitim, deneyim ve becerileri gibi alanları tutar.
  */
 export interface ICandidateProfile {
     name: string;
@@ -41,26 +38,18 @@ export interface ICandidateProfile {
 
 /**
  * -----------------------------
- *  IApplicationResponse Interface
+ *  IApplicationResponse Interface (SADELEŞTİRİLDİ)
  * -----------------------------
- * Adayın bir soruya (video metni, text, vb.) verdiği yanıta dair bilgileri tutar.
  */
 export interface IApplicationResponse {
     questionId: mongoose.Types.ObjectId;
-    videoUrl?: string;
-    textAnswer?: string;
-    aiAnalysisId?: mongoose.Types.ObjectId; // Bağlı bir AIAnalysis kaydına referans
-    facialAnalysis?: {
-        emotions?: Record<string, number>;
-        engagement?: number;
-    };
+    textAnswer?: string;  // ✅ SADECE text tabanlı yanıtları tutuyoruz.
 }
 
 /**
  * -----------------------------
  *  IPersonalityTestResults Interface
  * -----------------------------
- * Adayın tamamladığı (veya başlattığı) kişilik testine ait sonuçları tutar.
  */
 export interface IPersonalityTestResults {
     testId: mongoose.Types.ObjectId;
@@ -79,7 +68,6 @@ export interface IPersonalityTestResults {
  * -----------------------------
  *  ISupportRequest Interface
  * -----------------------------
- * Adayın destek (support) isteği gönderdiği durumları tutar.
  */
 export interface ISupportRequest {
     timestamp: Date;
@@ -90,16 +78,15 @@ export interface ISupportRequest {
  * -----------------------------
  *  IApplication Interface
  * -----------------------------
- * Adayın, belirli bir mülakata yaptığı başvuru dokümanına ait arayüz.
  */
 export interface IApplication extends Document {
     _id: mongoose.Types.ObjectId;
-    interviewId: mongoose.Types.ObjectId;  // Interview modeline referans
+    interviewId: mongoose.Types.ObjectId;
     candidate: ICandidateProfile;
     status: 'pending' | 'in_progress' | 'completed' | 'rejected' | 'accepted';
     personalityTestResults?: IPersonalityTestResults;
-    responses: IApplicationResponse[];
-    aiAnalysisResults: mongoose.Types.ObjectId[]; // Birden fazla AIAnalysis kaydı
+    responses: IApplicationResponse[];  // ✅ SADECE text-based cevaplar var.
+    aiAnalysisResults: mongoose.Types.ObjectId[]; // ✅ Video analizleri `VideoResponseModel` içinde olacak.
     latestAIAnalysisId?: mongoose.Types.ObjectId;
     generalAIAnalysis?: {
         overallScore?: number;
@@ -121,7 +108,7 @@ export interface IApplication extends Document {
 
 /**
  * -----------------------------
- *  Mongoose Schema Tanımlaması
+ *  Schema Tanımlama
  * -----------------------------
  */
 const ApplicationSchema: Schema<IApplication> = new Schema(
@@ -152,7 +139,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
                     company: { type: String },
                     position: { type: String },
                     duration: { type: String },
-                    responsibilities: { type: String, required: false }, // ✅ Opsiyonel hale getirildi
+                    responsibilities: { type: String, required: false },
                 },
             ],
             skills: {
@@ -172,7 +159,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             default: 'pending',
         },
         personalityTestResults: {
-            testId: { type: mongoose.Schema.Types.ObjectId, /*ref: 'PersonalityTest'*/ },
+            testId: { type: mongoose.Schema.Types.ObjectId },
             completed: { type: Boolean, default: false },
             scores: {
                 openness: { type: Number, default: 0 },
@@ -206,10 +193,9 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
     { timestamps: true }
 );
 
-
 /**
  * -----------------------------
- *  Indexler (Arama/Performans)
+ *  Indexler
  * -----------------------------
  */
 ApplicationSchema.index({ interviewId: 1 });
@@ -221,5 +207,4 @@ ApplicationSchema.index({ 'candidate.email': 1 });
  * -----------------------------
  */
 const ApplicationModel = mongoose.model<IApplication>('Application', ApplicationSchema);
-
 export default ApplicationModel;

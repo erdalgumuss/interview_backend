@@ -63,3 +63,9 @@ export const authenticateCandidate = (req: Request, res: Response, next: NextFun
       throw new AppError('Invalid token', ErrorCodes.UNAUTHORIZED, 401);
     }
   };
+export const authenticateAdmin = (req: Request, res: Response, next: NextFunction) => {
+    if (req.user?.role !== 'admin') {
+        return next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 403));
+    }
+    next();
+};

@@ -67,5 +67,5 @@ export function generatePasswordResetToken(): { token: string; expires: Date } {
 }
 
 export const generateCandidateToken = (applicationId: string) => {
-  return jwt.sign({ applicationId }, process.env.JWT_SECRET!, { expiresIn: '2h' });
+  return jwt.sign({ applicationId }, process.env.JWT_SECRET!, { expiresIn: '3h' });
 };
