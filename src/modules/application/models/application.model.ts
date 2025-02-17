@@ -152,7 +152,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
                     company: { type: String },
                     position: { type: String },
                     duration: { type: String },
-                    responsibilities: { type: String },
+                    responsibilities: { type: String, required: false }, // ✅ Opsiyonel hale getirildi
                 },
             ],
             skills: {

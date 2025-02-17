@@ -12,6 +12,7 @@ import { generateRandomCode } from '../../../utils/stringUtils';
 import { Types } from 'mongoose';
 import { GetPublicInterviewDTO } from '../dtos/publicInterview.dto';
 import { generateCandidateToken } from '../../../utils/tokenUtils';
+import { UpdateCandidateDTO } from '../dtos/updateCandidate.dto';
 
 export class CandidateService {
   private interviewRepository: InterviewRepository;
@@ -128,4 +129,38 @@ export class CandidateService {
 
     return { token, application: updatedApp };
   }
+
+  /**
+   * Aday detay bilgilerini güncelleme işlemi.
+   */
+  public async updateCandidateDetails(data: UpdateCandidateDTO) {
+    const { applicationId, education, experience, skills } = data;
+  
+    const application = await this.candidateRepository.getApplicationById(applicationId);
+    if (!application) {
+      throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
+    }
+  
+    // ✅ Varsayılan değerleri atayarak undefined hatasını önlüyoruz
+    application.candidate.education = education ?? application.candidate.education;
+    application.candidate.experience = experience?.map(exp => ({
+      company: exp.company,
+      position: exp.position,
+      duration: exp.duration,
+      responsibilities: exp.responsibilities ?? "", // ✅ Varsayılan değer atandı
+    })) ?? application.candidate.experience;
+  
+    application.candidate.skills = {
+      technical: skills?.technical ?? application.candidate.skills?.technical ?? [],
+      personal: skills?.personal ?? application.candidate.skills?.personal ?? [],
+      languages: skills?.languages ?? application.candidate.skills?.languages ?? [],
+    };
+  
+    application.status = 'in_progress';
+  
+    const updatedApplication = await this.candidateRepository.updateCandidate(applicationId, application);
+  
+    return updatedApplication;
+  }
+  
 }

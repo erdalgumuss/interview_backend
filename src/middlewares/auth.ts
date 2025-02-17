@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../utils/tokenUtils';
 import { AppError } from '../middlewares/error/appError';
+import jwt from 'jsonwebtoken';
 import { ErrorCodes } from '../constants/errors';
 
 declare global {
@@ -49,3 +50,16 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
         next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401));
     }
 }
+export const authenticateCandidate = (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) throw new AppError('Authorization token missing', ErrorCodes.UNAUTHORIZED, 401);
+  
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { applicationId: string };
+      req.body.applicationId = decoded.applicationId;
+      next();
+    } catch (err) {
+      throw new AppError('Invalid token', ErrorCodes.UNAUTHORIZED, 401);
+    }
+  };

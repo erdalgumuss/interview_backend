@@ -34,5 +34,16 @@ export class CandidateRepository {
       .select('+candidate.verificationCode')
       .exec();
   }
-  
+    /**
+   * Adayın başvurusunu getir.
+   */
+    public async getApplicationById(applicationId: string): Promise<IApplication | null> {
+      return ApplicationModel.findById(applicationId).exec();
+    }
+    /**
+   * Adayın kişisel bilgilerini güncelle.
+   */
+    public async updateCandidate(applicationId: string, updateData: Partial<IApplication>): Promise<IApplication | null> {
+      return ApplicationModel.findByIdAndUpdate(applicationId, updateData, { new: true }).exec();
+    }
 }

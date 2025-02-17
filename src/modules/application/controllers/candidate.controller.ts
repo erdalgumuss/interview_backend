@@ -1,4 +1,3 @@
-// src/modules/interview/controllers/interviewPublic.controller.ts
 
 import { Request, Response, NextFunction } from 'express';
 import { CandidateService } from '../services/candidate.service';
@@ -7,13 +6,20 @@ import { AppError } from '../../../middlewares/error/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import { CreateApplicationDTO, createApplicationSchema } from '../dtos/createApplication.dto';
 import { VerifyOtpDTO, verifyOtpSchema } from '../dtos/otpVerify.dto';
+import { updateCandidateSchema } from '../dtos/updateCandidate.dto';
 
 class CandidateController {
   private candidateService: CandidateService;
 
   constructor() {
-    this.candidateService = new CandidateService();
-  }
+      this.candidateService = new CandidateService();
+  
+      // `this` bağlamını kaybetmemek için bind ediyoruz
+      this.getPublicInterview = this.getPublicInterview.bind(this);
+      this.createApplication = this.createApplication.bind(this);
+      this.verifyOtp = this.verifyOtp.bind(this);
+      this.updateCandidateDetails = this.updateCandidateDetails.bind(this);
+     }
 
   public getPublicInterview = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -98,6 +104,27 @@ public verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
-}
+  /**
+   * Aday kişisel bilgilerini günceller.
+   */
+  public async updateCandidateDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Gelen veriyi validasyon şeması ile doğrula
+      const { error } = updateCandidateSchema.validate(req.body);
+      if (error) {
+        throw new Error(error.message);
+      }
 
-export default new CandidateController();
+      const updatedApplication = await this.candidateService.updateCandidateDetails(req.body);
+      
+      res.status(200).json({
+        success: true,
+        data: updatedApplication,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+}
+const candidateController = new CandidateController();
+export default candidateController;
