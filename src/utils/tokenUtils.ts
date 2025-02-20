@@ -30,18 +30,20 @@ export function verifyEmailVerificationToken(token: string): { userId: string } 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refreshSecret';
 
+
+
 /**
- * Access Token üretir (kısa süreli, örn. 15dk)
+ * Access Token üretir (Kısa süreli, yalnızca userId içerir)
  */
 export function generateAccessToken(userId: string, role: string): string {
-    return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: '15m' });
+    return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '10m' });
 }
 
 /**
- * Refresh Token üretir (daha uzun, örn. 7 gün)
+ * Refresh Token üretir (Kullanıcıya özel versiyon içerir)
  */
-export function generateRefreshToken(payload: Record<string, any>): string {
-    return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+export function generateRefreshToken(userId: string, version: number): string {
+    return jwt.sign({ userId, version }, JWT_REFRESH_SECRET!, { expiresIn: '7d' });
 }
 
 /**

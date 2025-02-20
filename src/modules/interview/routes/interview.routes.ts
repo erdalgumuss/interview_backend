@@ -49,4 +49,5 @@ router.patch('/:id/questions', authenticate, asyncHandler(interviewController.up
 // 📌 PersonalityTest modülüyle ilişkilendirme (Sadece kişilik testi ID değiştirildiği için PATCH kullanıldı)
 router.patch('/:id/personality-test', authenticate, asyncHandler(interviewController.updatePersonalityTest.bind(interviewController)));
 
+router.get('/dashboard', authenticate, asyncHandler(interviewController.getUserInterviews.bind(interviewController)));
 export default router;

@@ -13,7 +13,7 @@ import { LoginDTO } from '../dtos/login.dto';
 import TokenRepository from '../repositories/token.repository';
 import { generatePasswordResetToken } from '../../../utils/tokenUtils';
 import { sendPasswordResetEmail } from '../../../utils/emailUtils';
-
+import jwt from 'jsonwebtoken';
 
 class AuthService {
     /**
@@ -40,89 +40,104 @@ class AuthService {
         return user;
     }
 
-    /**
-    * Login (Kullanıcı girişi)
-    */
-    public async loginUser(data: LoginDTO) {
+    public async loginUser(data: LoginDTO, clientInfo: { ip: string, userAgent: string }) {
         const { email, password } = data;
-
-        // 1) Kullanıcı var mı
+    
+        // 1) Kullanıcı var mı?
         const user = await AuthRepository.findByEmail(email);
         if (!user) {
             throw new AppError('Invalid credentials', ErrorCodes.INVALID_CREDENTIALS, 401);
         }
-
+    
         // 2) Şifre karşılaştırma
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            // Hatalı giriş, failedLoginAttempts++ yapılabilir (isteğe bağlı)
             await user.incrementFailedLogins();
             console.log(`Yeni Failed Attempts: ${user.failedLoginAttempts}`);
             throw new AppError('Invalid credentials', ErrorCodes.INVALID_CREDENTIALS, 401);
         }
-
+    
         // 3) Email doğrulama
-        // 3) Kullanıcı e-posta doğrulamasını yapmamışsa otomatik tekrar mail gönder
         if (!user.emailVerified) {
             const verificationToken = generateEmailVerificationToken(user._id.toString());
             await sendVerificationEmail(user.email, verificationToken);
-
-            throw new AppError(
-                'Email is not verified. A new verification email has been sent.',
-                ErrorCodes.FORBIDDEN,
-                403
-            );
+            throw new AppError('Email is not verified. A new verification email has been sent.', ErrorCodes.FORBIDDEN, 403);
         }
-
+    
         // 4) Hesap kilidi kontrolü
         if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
             throw new AppError('Account locked', ErrorCodes.ACCOUNT_LOCKED, 403);
         }
-
-        // 5) Giriş başarılı, failedLoginAttempts sıfırla
-        user.failedLoginAttempts = 0;
-        user.accountLockedUntil = undefined;
+    
+        // 5) Kullanıcı giriş yaptığında eski refresh token'ları iptal et
+        await TokenRepository.revokeAllTokens(user._id.toString());
+    
+        // 6) Kullanıcı giriş yaptığında `tokenVersion` artır
+        user.tokenVersion += 1;
+        user.lastLoginAt = new Date(); // ✅ Son giriş tarihi güncellendi
         await user.save();
-
-        // 6) Token oluştur
+    
+        // 7) Yeni Access ve Refresh Token oluştur
         const accessToken = generateAccessToken(user._id.toString(), user.role);
-        const refreshToken = generateRefreshToken({ userId: user._id });
-        // 6) Refresh Token'ı veritabanına kaydet
-        await TokenRepository.createRefreshToken(user._id.toString(), refreshToken, 7 * 24 * 60 * 60 * 1000);
-
-        // 7) User objesi döndürürken hassas alanları filtreleyebilirsiniz
-        //    Şimdilik user.toJSON() ile password, tokens vs. remove edilebilir (model'e set('toJSON',...) tanımlıysa)
-        return {
-            user,
-            accessToken,
-            refreshToken,
-        };
+        const refreshToken = generateRefreshToken(user._id.toString(), user.tokenVersion);
+    
+        // 8) Refresh Token’ı DB’ye kaydet ve eski token sayısını sınırla
+        await TokenRepository.createRefreshToken(user._id.toString(), refreshToken, clientInfo);
+        await TokenRepository.enforceTokenLimit(user._id.toString()); // ✅ Token sayısı sınırlandırıldı
+    
+        return { user, accessToken, refreshToken };
     }
-
+    
+    
     /**
      * Refresh token kullanarak yeni access token oluşturma
      */
-    public async refreshAccessToken(refreshToken: string) {
-        const existingToken = await TokenRepository.findRefreshToken(refreshToken);
-        if (!existingToken) {
-            throw new AppError('Invalid refresh token', ErrorCodes.UNAUTHORIZED, 401);
-        }
+    public async refreshAccessToken(refreshToken: string, clientInfo: { ip: string, userAgent: string }) {
+        let decoded: any;
 
-        // Yeni Access Token üret
-        const user = await AuthRepository.findById(existingToken.user.toString());
-        if (!user) {
-            throw new AppError('User not found', ErrorCodes.NOT_FOUND, 404);
+        try {
+            const decoded: any = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+            const user = await AuthRepository.findById(decoded.userId);
+    
+            if (!user || !user.isActive) {
+                throw new Error('User not found or inactive');
+            }
+    
+            if (user.tokenVersion !== decoded.version) {
+                throw new Error('Refresh token is invalid due to version mismatch');
+            }
+    
+            const existingToken = await TokenRepository.findRefreshToken(refreshToken);
+            if (!existingToken) {
+                // 🚨 Token geçersizse hemen sil ve kullanıcıya zorunlu giriş yaptır
+                await TokenRepository.revokeAllTokens(user._id.toString());
+                throw new Error('Invalid refresh token');
+            }
+    
+            if (existingToken.ip !== clientInfo.ip || existingToken.userAgent !== clientInfo.userAgent) {
+                console.warn(`🚨 Şüpheli giriş tespit edildi! IP: ${clientInfo.ip}`);
+                await AuthRepository.flagSuspiciousActivity(user._id.toString(), clientInfo.ip);
+                await TokenRepository.revokeAllTokens(user._id.toString());
+                throw new Error('Suspicious refresh token detected');
+            }
+    
+            // ✅ Refresh Token son kullanım tarihini güncelle
+            await TokenRepository.updateLastUsed(refreshToken);
+    
+            const newAccessToken = generateAccessToken(user._id.toString(), user.role);
+            const newRefreshToken = generateRefreshToken(user._id.toString(), user.tokenVersion);
+    
+            await TokenRepository.replaceRefreshToken(user._id.toString(), refreshToken, newRefreshToken, clientInfo);
+    
+            return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+        } catch (error) {
+            console.error('Refresh Token Hatası:', error);
+            await TokenRepository.revokeAllTokens(decoded?.userId);
+            throw new Error('Invalid refresh token');
         }
-        const newAccessToken = generateAccessToken(user._id.toString(), user.role);
-
-        return { accessToken: newAccessToken };
     }
-    /**
-     * Kullanıcı çıkış işlemi
-     */
-    public async logoutUser(refreshToken: string) {
-        await TokenRepository.revokeToken(refreshToken);
-    }
+    
+    
     /**
     * Şifre sıfırlama tokeni oluştur ve e-posta gönder.
     */
@@ -142,6 +157,16 @@ class AuthService {
         await sendPasswordResetEmail(user.email, token);
 
         return { success: true, message: 'Password reset email sent' };
+    }
+    public async logoutUser(refreshToken: string): Promise<void> {
+        try {
+            // 1) Veritabanındaki refresh token'ı iptal et
+            await TokenRepository.revokeToken(refreshToken);
+            console.log(`Refresh token revoked successfully: ${refreshToken}`);
+        } catch (error) {
+            console.error(`Error revoking refresh token: ${refreshToken}`, error);
+            throw new Error('Failed to logout user');
+        }
     }
 
     /**

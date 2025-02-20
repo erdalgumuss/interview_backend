@@ -6,4 +6,5 @@ export const updateProfileSchema = Joi.object({
     phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).optional(),
     bio: Joi.string().max(300).optional(),
     profilePicture: Joi.string().uri().optional(), // URL formatında olmalı
+    
 });

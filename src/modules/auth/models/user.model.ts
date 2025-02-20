@@ -27,6 +27,11 @@ export interface IUser extends Document {
     emailVerificationToken?: string;
     emailVerificationExpires?: Date;
     phone?: string;
+    tokenVersion: number;  // ✅ Yeni eklenen alan
+    lastLoginAt?: Date;  // Son başarılı giriş zamanı
+    lastKnownIPs?: string[];  // Kullanıcının önceki giriş yaptığı IP'ler
+    sessionCount: number;  // Aktif oturum sayısı
+
 
     // Parola sıfırlama
     passwordResetToken?: string;
@@ -89,7 +94,11 @@ const UserSchema: Schema<IUser> = new Schema(
         phoneVerified: { type: Boolean, default: false },
         emailVerificationToken: { type: String },
         emailVerificationExpires: { type: Date },
-
+        tokenVersion: { type: Number, default: 0 },  // ✅ Yeni eklenen alan
+        lastLoginAt: { type: Date },  // Son başarılı giriş zamanı
+        lastKnownIPs: [{ type: String }],  // Kullanıcının önceki giriş yaptığı IP'ler
+        sessionCount: { type: Number, default: 0 },  // Aktif oturum sayısı
+        
         passwordResetToken: { type: String },
         passwordResetExpires: { type: Date },
         passwordResetTries: { type: Number, default: 0 },
