@@ -66,73 +66,61 @@ export async function verifyEmail(req: Request, res: Response, next: NextFunctio
 // Login Controller
 export const login: RequestHandler = async (req, res, next) => {
     try {
-      // 1) Request body validasyonu
-      const validatedData: LoginDTO = await loginSchema.validateAsync(req.body);
-  
-      // 2) Client bilgilerini al (IP ve User-Agent)
-      const clientInfo = {
-        ip:
-          req.headers['x-forwarded-for']?.toString().split(',')[0] ||
-          req.ip ||
-          'Unknown',
-        userAgent: req.headers['user-agent'] || 'Unknown',
-      };
-  
-      // 3) Kullanıcı giriş işlemini gerçekleştir
-      const { user, accessToken, refreshToken } =
-        await AuthService.loginUser(validatedData, clientInfo);
-  
-      // 4) Refresh token'ı HttpOnly cookie olarak set et (güvenlik için)
-      res.cookie('refresh_token', refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 gün
-        path: '/',
-      });
-  
-      // 5) Access token'ı response body'de döndür (frontend, bunu Authorization Bearer header olarak kullanacak)
-      res.json({
-        success: true,
-        message: 'Login successful',
-        data: {
-          user: {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            profilePicture: user.profilePicture,
-          },
-          accessToken,
-        },
-      });
+        const validatedData: LoginDTO = await loginSchema.validateAsync(req.body);
+
+        const clientInfo = {
+            ip: req.headers['x-forwarded-for']?.toString().split(',')[0] || req.ip || 'Unknown',
+            userAgent: req.headers['user-agent'] || 'Unknown',
+        };
+
+        const { user, accessToken, refreshToken } = await AuthService.loginUser(validatedData, clientInfo);
+
+        res.cookie('refresh_token', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            path: '/',
+        });
+
+        res.json({
+            success: true,
+            message: 'Login successful',
+            data: {
+                user: {
+                    _id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    profilePicture: user.profilePicture,
+                },
+                accessToken,
+            },
+        });
     } catch (err) {
-      next(err);
+        next(err);
     }
-  };
+};
+
   
   // Logout Controller
-  export const logout: RequestHandler = async (req, res, next) => {
+  export const logout: RequestHandler = async (req, res, next): Promise<void> => {
     try {
-      // 1) Refresh token'ı cookie'den al
-      const refreshToken = req.cookies?.refresh_token;
-      if (!refreshToken) {
-        res.status(400).json({ success: false, message: 'No refresh token provided' });
-        return;
-      }
-  
-      // 2) Logout servisini çağır (backend tüm refresh token'ları iptal edecek)
-      await AuthService.logoutUser(refreshToken);
-  
-      // 3) Refresh token cookie'sini temizle
-      res.clearCookie('refresh_token', { path: '/' });
-  
-      res.json({ success: true, message: 'Successfully logged out' });
+        const refreshToken = req.cookies?.refresh_token;
+        if (!refreshToken) {
+          res.status(204).send();
+        }
+
+        await AuthService.logoutUser(refreshToken);
+        res.clearCookie('refresh_te 2oken', { path: '/' });
+
+       res.status(204).send();
     } catch (err) {
-      next(err);
+        next(err);
     }
-  };
-  
+};
+
+
   // Refresh Access Token Controller
 
 

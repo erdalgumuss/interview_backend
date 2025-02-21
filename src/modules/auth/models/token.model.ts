@@ -8,10 +8,12 @@ export interface IToken extends Document {
     isRevoked: boolean;
     isValid(): boolean;
     userAgent: string;  // ✅ Yeni eklenen alan
-    ip: string;  // ✅ Yeni eklenen alan
+    ip: string;         // ✅ Yeni eklenen alan
+    deviceInfo?: string;  // Kullanıcının token oluşturduğu cihaz bilgisi
+    lastUsedAt?: Date;    // Token’ın en son ne zaman kullanıldığı
 }
 
-const TokenSchema: Schema<IToken> = new Schema(
+const TokenSchema: Schema<IToken> = new Schema<IToken>(
     {
         user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         token: { type: String, required: true }, // ✅ Hash olarak saklanıyor
@@ -23,10 +25,9 @@ const TokenSchema: Schema<IToken> = new Schema(
         },
         isRevoked: { type: Boolean, default: false },
         userAgent: { type: String, required: true },  // ✅ Yeni eklenen alan
-        ip: { type: String, required: true },  // ✅ Yeni eklenen alan
-        deviceInfo: { type: String },  // Kullanıcının token oluşturduğu cihaz bilgisi
-        lastUsedAt: { type: Date },  // Token’ın en son ne zaman kullanıldığı
-
+        ip: { type: String, required: true },           // ✅ Yeni eklenen alan
+        deviceInfo: { type: String, required: false },    // İsteğe bağlı
+        lastUsedAt: { type: Date, required: false },      // İsteğe bağlı
     },
     { timestamps: true }
 );

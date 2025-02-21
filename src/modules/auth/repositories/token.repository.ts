@@ -26,17 +26,26 @@ class TokenRepository {
         });
     }
 
+
     /**
      * Refresh token'ı veritabanında bul (Hashed Token ile karşılaştırma yap)
      */
-    async findRefreshToken(token: string): Promise<IToken | null> {
+    async findRefreshToken(userId: string, token: string): Promise<IToken | null> {
         const hashedToken = TokenRepository.hashToken(token);
-        return await TokenModel.findOne({ token: hashedToken, isRevoked: false });
+        const foundToken = await TokenModel.findOne({ user: userId, token: hashedToken, isRevoked: false });
+
+        if (foundToken) {
+            await this.updateLastUsed(token);
+        }
+
+        return foundToken;
     }
+
 
     /**
      * Refresh Token'ın kullanım zamanını güncelle
      */
+
     async updateLastUsed(token: string) {
         const hashedToken = TokenRepository.hashToken(token);
         return await TokenModel.updateOne({ token: hashedToken }, { lastUsedAt: new Date() });
@@ -46,7 +55,7 @@ class TokenRepository {
      * Kullanıcının eski refresh tokenlarını iptal et (Logout, yeni giriş vb. durumlarda)
      */
     async revokeAllTokens(userId: string) {
-        return await TokenModel.updateMany({ user: userId }, { isRevoked: true });
+        await TokenModel.updateMany({ user: userId }, { isRevoked: true });
     }
 
     /**
@@ -56,7 +65,6 @@ class TokenRepository {
         const hashedToken = TokenRepository.hashToken(token);
         return await TokenModel.updateOne({ token: hashedToken }, { isRevoked: true });
     }
-
     /**
      * Token'ları hashleyerek saklamak için SHA-256 kullanıyoruz.
      */
@@ -68,15 +76,16 @@ class TokenRepository {
      * Kullanıcının refresh tokenlarını sınırlı tut
      */
     async enforceTokenLimit(userId: string, maxTokens = 5) {
-        const tokens = await TokenModel.find({ user: userId, isRevoked: false }).sort({ createdAt: 1 });
-        if (tokens.length > maxTokens) {
-            const excessTokens = tokens.slice(0, tokens.length - maxTokens);
-            await TokenModel.updateMany(
-                { _id: { $in: excessTokens.map(t => t._id) } },
-                { isRevoked: true }
-            );
+        const tokenCount = await TokenModel.countDocuments({ user: userId, isRevoked: false });
+
+        if (tokenCount > maxTokens) {
+            await TokenModel.deleteMany({ 
+                user: userId, 
+                isRevoked: false 
+            }).sort({ createdAt: 1 }).limit(tokenCount - maxTokens);
         }
     }
+
 
     /**
      * Tek kullanımlık refresh token için eskiyi sil ve yenisini ekle
