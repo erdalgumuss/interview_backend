@@ -88,7 +88,6 @@ const InterviewSchema = new Schema<IInterview>(
         status: {
             type: String,
             enum: ['active', 'completed', 'published', 'draft', 'inactive'],
-            default: 'active',
         },
         personalityTestId: {
             type: mongoose.Schema.Types.ObjectId,

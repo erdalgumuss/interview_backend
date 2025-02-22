@@ -8,6 +8,7 @@ export class InterviewRepository {
    */
   public async createInterview(data: Partial<IInterview>): Promise<IInterview> {
     const interview = new InterviewModel(data);
+    console.log('📤 Repository:', data); // Debug için log
     return interview.save();
   }
 

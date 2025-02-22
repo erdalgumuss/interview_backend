@@ -76,7 +76,7 @@ export const login: RequestHandler = async (req, res, next) => {
             maxAge: 15 * 60 * 1000,    // 15 dakika süre (milisaniye)
             path: '/',                 // Tüm alt dizinlerde geçerli
         });
-
+        
         // 4) Refresh Token'ı da HttpOnly Cookie'de sakla
         res.cookie('refresh_token', refreshToken, {
             httpOnly: true,

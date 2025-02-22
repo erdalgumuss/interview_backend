@@ -59,4 +59,8 @@ export interface CreateInterviewDTO {
             requiredSkills: string[];
         };
     }[];
+    interviewLink: {
+        link: string;
+        expirationDate?: Date;
+    };
 }

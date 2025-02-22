@@ -20,7 +20,7 @@ export class InterviewService {
       data: CreateInterviewDTO,
       userId: string
   ): Promise<IInterview> {
-      console.log('📥 Gelen Questions:', data.questions); // Debug için log
+      console.log('📥 Gelen Service:', data); // Debug için log
   
       const parsedExpirationDate = new Date(data.expirationDate);
       if (isNaN(parsedExpirationDate.getTime())) {
@@ -28,14 +28,23 @@ export class InterviewService {
       }
   
       const interviewData: Partial<IInterview> = {
-          title: data.title,
-          expirationDate: parsedExpirationDate,
-          createdBy: {
-              userId: new mongoose.Types.ObjectId(userId),
-          },
-          personalityTestId: data.personalityTestId ? new mongoose.Types.ObjectId(data.personalityTestId) : undefined,
-          questions: data.questions ?? [], // 📌 Questions alanı eklendi
-      };
+        title: data.title,
+        expirationDate: parsedExpirationDate,
+        status: data.status,
+        createdBy: {
+            userId: new mongoose.Types.ObjectId(userId),
+        },
+        personalityTestId: data.personalityTestId ? new mongoose.Types.ObjectId(data.personalityTestId) : undefined,
+        questions: data.questions ?? [], // 📌 Questions alanı eklendi
+        interviewLink: data.interviewLink
+            ? {
+                  link: data.interviewLink.link,
+                  expirationDate: data.interviewLink.expirationDate ? new Date(data.interviewLink.expirationDate) : undefined,
+              }
+            : undefined,
+    };
+    
+
   
       return this.interviewRepository.createInterview(interviewData);
   }
