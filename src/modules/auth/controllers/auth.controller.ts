@@ -64,61 +64,87 @@ export async function verifyEmail(req: Request, res: Response, next: NextFunctio
 
 
 // Login Controller
+// Login Controller
 export const login: RequestHandler = async (req, res, next) => {
-    try {
-        const validatedData: LoginDTO = await loginSchema.validateAsync(req.body);
+  try {
+      const validatedData: LoginDTO = await loginSchema.validateAsync(req.body);
 
-        const clientInfo = {
-            ip: req.headers['x-forwarded-for']?.toString().split(',')[0] || req.ip || 'Unknown',
-            userAgent: req.headers['user-agent'] || 'Unknown',
-        };
+      const clientInfo = {
+          ip: req.headers['x-forwarded-for']?.toString().split(',')[0] || req.ip || 'Unknown',
+          userAgent: req.headers['user-agent'] || 'Unknown',
+      };
 
-        const { user, accessToken, refreshToken } = await AuthService.loginUser(validatedData, clientInfo);
+      console.log(`🔍 Login Attempt: Email=${validatedData.email}, IP=${clientInfo.ip}, User-Agent=${clientInfo.userAgent}`);
 
-        res.cookie('refresh_token', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-            path: '/',
-        });
+      const { user, accessToken, refreshToken } = await AuthService.loginUser(validatedData, clientInfo);
 
-        res.json({
-            success: true,
-            message: 'Login successful',
-            data: {
-                user: {
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    profilePicture: user.profilePicture,
-                },
-                accessToken,
-            },
-        });
-    } catch (err) {
-        next(err);
-    }
+      // Access tokenı cookie olarak ayarla (örneğin 10 dakika)
+      res.cookie('access_token', accessToken, {
+          httpOnly: true,
+          secure: process.env.COOKIE_SECURE === 'true',
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: 10 * 60 * 1000, // 10 dakika
+          path: '/',
+      });
+
+      // Refresh tokenı cookie olarak ayarla (örneğin 7 gün)
+      res.cookie('refresh_token', refreshToken, {
+          httpOnly: true,
+          secure: process.env.COOKIE_SECURE === 'true',
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 gün
+          path: '/',
+      });
+
+      res.json({
+          success: true,
+          message: 'Login successful',
+          data: {
+              user: {
+                  _id: user._id,
+                  name: user.name,
+                  email: user.email,
+                  role: user.role,
+                  profilePicture: user.profilePicture,
+              }
+          },
+      });
+  } catch (err) {
+      console.error('❌ Login Error:', err);
+      next(err);
+  }
 };
+
 
   
   // Logout Controller
-  export const logout: RequestHandler = async (req, res, next): Promise<void> => {
-    try {
-        const refreshToken = req.cookies?.refresh_token;
-        if (!refreshToken) {
-          res.status(204).send();
-        }
+// Logout Controller
+export const logout: RequestHandler = async (req, res, next): Promise<void> => {
+  try {
+      // 1) Refresh token'ı cookie'den al
+      const refreshToken = req.cookies?.refresh_token;
+      if (!refreshToken) {
+          console.warn('⚠ No refresh token provided.');
+         res.status(204).send();
+      }
 
-        await AuthService.logoutUser(refreshToken);
-        res.clearCookie('refresh_te 2oken', { path: '/' });
+      // 2) Kullanıcının tüm refresh tokenlarını iptal et
+      await AuthService.logoutUser(refreshToken);
 
-       res.status(204).send();
-    } catch (err) {
-        next(err);
-    }
+      // 3) Tüm oturumla ilgili cookieleri temizle
+      res.clearCookie('refresh_token', { path: '/' });
+      res.clearCookie('access_token', { path: '/' });
+
+      console.log('✅ Logout successful.');
+
+      // 4) 204 No Content Yanıtı Dön
+      res.status(204).send();
+  } catch (err) {
+      console.error('❌ Logout Error:', err);
+      next(err);
+  }
 };
+
 
 
   // Refresh Access Token Controller
@@ -126,49 +152,60 @@ export const login: RequestHandler = async (req, res, next) => {
 
 
 // Refresh Access Token Controller
+// Refresh Access Token Controller
 export const refreshAccessToken: RequestHandler = async (req, res, next): Promise<void> => {
-    try {
+  try {
       // 1) Refresh token'ı cookie'den al
       const refreshToken = req.cookies.refresh_token;
       if (!refreshToken) {
-        res.status(401).json({ success: false, message: 'Unauthorized: No refresh token' });
-        return;
+          console.warn('⚠ No refresh token provided.');
+          res.status(401).json({ success: false, message: 'Unauthorized: No refresh token' });
+          return;
       }
-  
+
       // 2) Client bilgilerini al
       const clientInfo = {
-        ip:
-          req.headers['x-forwarded-for']?.toString().split(',')[0] ||
-          req.ip ||
-          'Unknown',
-        userAgent: req.headers['user-agent'] || 'Unknown',
+          ip: req.headers['x-forwarded-for']?.toString().split(',')[0] || req.ip || 'Unknown',
+          userAgent: req.headers['user-agent'] || 'Unknown',
       };
-  
-      // 3) AuthService.refreshAccessToken çağrısını yap
+
+      console.log(`🔄 Refresh Token Attempt: IP=${clientInfo.ip}, User-Agent=${clientInfo.userAgent}`);
+
+      // 3) Yeni access token ve refresh token oluştur
       const { accessToken, refreshToken: newRefreshToken } =
-        await AuthService.refreshAccessToken(refreshToken, clientInfo);
-  
+          await AuthService.refreshAccessToken(refreshToken, clientInfo);
+
       // 4) Yeni refresh token varsa cookie'yi güncelle
       if (newRefreshToken) {
-        res.cookie('refresh_token', newRefreshToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 gün
-          path: '/',
-        });
+          res.cookie('refresh_token', newRefreshToken, {
+              httpOnly: true,
+              secure: process.env.COOKIE_SECURE === 'true',
+              sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+              maxAge: 7 * 24 * 60 * 60 * 1000, // 7 gün
+              path: '/',
+          });
       }
-  
+
+      // ✅ Yeni access token'ı da cookie olarak ayarla (10 dakika geçerli)
+      res.cookie('access_token', accessToken, {
+          httpOnly: true,
+          secure: process.env.COOKIE_SECURE === 'true',
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: 10 * 60 * 1000, // 10 dakika
+          path: '/',
+      });
+
       // 5) Yeni access token'ı response body'de döndür
       res.json({
-        success: true,
-        message: 'Access token refreshed',
-        data: { accessToken },
+          success: true,
+          message: 'Access token refreshed',
       });
-    } catch (err) {
+  } catch (err) {
+      console.error('❌ Refresh Token Error:', err);
       res.status(401).json({ success: false, message: 'Unauthorized: Invalid refresh token' });
-    }
-  };
+  }
+};
+
 
 export const requestPasswordReset: RequestHandler = async (req, res, next) => {
     try {

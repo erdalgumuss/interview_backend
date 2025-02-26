@@ -68,29 +68,49 @@ class AuthService {
             throw new AppError('Account locked', ErrorCodes.ACCOUNT_LOCKED, 403);
         }
     
-        // 5) Kullanıcı giriş yaptığında eski refresh token'ları iptal et
-        await TokenRepository.revokeAllTokens(user._id.toString());
+        try {
+            // 5) Kullanıcı giriş yaptığında eski refresh token'ları iptal et
+            await TokenRepository.revokeAllTokens(user._id.toString());
     
-        // 6) Kullanıcı giriş yaptığında `tokenVersion` artır
-        user.tokenVersion += 1;
-        user.lastLoginAt = new Date();
-        await user.save();
+            // 6) Kullanıcı giriş yaptığında `tokenVersion` artır
+            user.tokenVersion += 1;
+            user.lastLoginAt = new Date();
+            await user.updateLastLogin(clientInfo.ip);  // ✅ IP listesi güncelleme eklendi
+            await user.save();
     
-        // 7) Yeni Access ve Refresh Token oluştur
-        const accessToken = generateAccessToken(user._id.toString(), user.role);
-        const refreshToken = generateRefreshToken(user._id.toString(), user.tokenVersion);
+            // 7) Yeni Access ve Refresh Token oluştur
+            const accessToken = generateAccessToken(user._id.toString(), user.role);
+            const refreshToken = generateRefreshToken(user._id.toString(), user.tokenVersion);
     
-        // 8) Refresh Token’ı DB’ye kaydet ve eski tokenları sınırla
-        await TokenRepository.createRefreshToken(user._id.toString(), refreshToken, clientInfo);
-        await TokenRepository.enforceTokenLimit(user._id.toString()); 
+            // 8) Refresh Token’ı DB’ye kaydet ve eski tokenları sınırla
+            await TokenRepository.createRefreshToken(user._id.toString(), refreshToken, clientInfo);
+            await TokenRepository.enforceTokenLimit(user._id.toString()); 
     
-        // ✅ Refresh token son kullanımı güncelle
-        await TokenRepository.updateLastUsed(refreshToken);
+            // ✅ Refresh token son kullanımı güncelle
+            await TokenRepository.updateLastUsed(TokenRepository.hashToken(refreshToken)); // ✅ Hashlenmiş token update edildi.
     
-        return { user, accessToken, refreshToken };
+            return { user, accessToken, refreshToken };
+        } catch (err) {
+            await TokenRepository.revokeAllTokens(user._id.toString());  // ✅ Hata durumunda eski tokenları iptal et
+            throw new AppError('Login işlemi başarısız oldu', ErrorCodes.SERVER_ERROR, 500);
+        }
     }
     
+
+    public async logoutUser(refreshToken: string): Promise<void> {
+        try {
+            // 1) Refresh token'ı hashleyerek iptal et
+            await TokenRepository.revokeToken(TokenRepository.hashToken(refreshToken));
     
+            // 2) Başarı durumunu güvenli şekilde logla
+            console.log(`✅ Refresh token revoked successfully for user.`);
+        } catch (error) {
+            console.error(`❌ Error revoking refresh token`, error);
+            throw new AppError('Failed to revoke refresh token', ErrorCodes.SERVER_ERROR, 500);
+        }
+    }
+    
+
     
     /**
      * Refresh token kullanarak yeni access token oluşturma
@@ -110,27 +130,37 @@ class AuthService {
                 throw new AppError('Refresh token is invalid due to version mismatch', ErrorCodes.UNAUTHORIZED, 401);
             }
     
-            const existingToken = await TokenRepository.findRefreshToken(decoded.userId, refreshToken);
+            // ✅ Hashlenmiş token ile veritabanında arama yap
+            const hashedRefreshToken = TokenRepository.hashToken(refreshToken);
+            const existingToken = await TokenRepository.findRefreshToken(decoded.userId, hashedRefreshToken);
+    
             if (!existingToken) {
                 await TokenRepository.revokeAllTokens(user._id.toString());
                 throw new AppError('Invalid refresh token', ErrorCodes.UNAUTHORIZED, 401);
             }
     
+            // ✅ IP & User-Agent Doğrulaması
             if (existingToken.ip !== clientInfo.ip || existingToken.userAgent !== clientInfo.userAgent) {
                 await AuthRepository.flagSuspiciousActivity(user._id.toString(), clientInfo.ip);
                 await TokenRepository.revokeAllTokens(user._id.toString());
                 throw new AppError('Suspicious refresh token detected', ErrorCodes.UNAUTHORIZED, 401);
             }
     
-            await TokenRepository.updateLastUsed(refreshToken);
+            // ✅ Hashlenmiş token ile update işlemi yap
+            await TokenRepository.updateLastUsed(hashedRefreshToken);
+    
+            // ✅ Yeni Access ve Refresh Token Üret
             const newAccessToken = generateAccessToken(user._id.toString(), user.role);
             const newRefreshToken = generateRefreshToken(user._id.toString(), user.tokenVersion);
     
-            await TokenRepository.replaceRefreshToken(user._id.toString(), refreshToken, newRefreshToken, clientInfo);
+            // ✅ Refresh Token’ı değiştir
+            await TokenRepository.replaceRefreshToken(user._id.toString(), hashedRefreshToken, TokenRepository.hashToken(newRefreshToken), clientInfo);
     
             return { accessToken: newAccessToken, refreshToken: newRefreshToken };
         } catch (error) {
-            await TokenRepository.revokeAllTokens(decoded?.userId);
+            if (decoded?.userId) {
+                await TokenRepository.revokeAllTokens(decoded.userId);
+            }
             throw new AppError('Invalid refresh token', ErrorCodes.UNAUTHORIZED, 401);
         }
     }
@@ -156,16 +186,8 @@ class AuthService {
 
         return { success: true, message: 'Password reset email sent' };
     }
-    public async logoutUser(refreshToken: string): Promise<void> {
-        try {
-            // 1) Veritabanındaki refresh token'ı iptal et
-            await TokenRepository.revokeToken(refreshToken);
-            console.log(`Refresh token revoked successfully: ${refreshToken}`);
-        } catch (error) {
-            console.error(`Error revoking refresh token: ${refreshToken}`, error);
-            throw new Error('Failed to logout user');
-        }
-    }
+    
+    
 
     /**
      * Kullanıcının şifresini sıfırla
@@ -186,9 +208,3 @@ class AuthService {
 }
 
 export default new AuthService();
-
-/**
- * Örnek: Kullanıcı kaydı (registerUser) metodu
- *        Zaten yaptığımızı varsayıyoruz.
- */
-// public async registerUser( ... ) { ... }

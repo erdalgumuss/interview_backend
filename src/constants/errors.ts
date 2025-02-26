@@ -24,7 +24,8 @@ export enum ErrorCodes {
     // Interview / Application vb. özel kodlar
     INTERVIEW_NOT_FOUND = 'INTERVIEW_NOT_FOUND',
     APPLICATION_NOT_FOUND = 'APPLICATION_NOT_FOUND',
-    CONFLICT = 'CONFLICT',  // ✅ Yeni eklendi
+    CONFLICT = 'CONFLICT',
+    SERVER_ERROR = "SERVER_ERROR",  // ✅ Yeni eklendi
 
 }
 

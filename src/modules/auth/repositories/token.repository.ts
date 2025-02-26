@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import TokenModel, { IToken } from '../models/token.model';
+import { hashToken } from '../../../utils/tokenUtils';
 
 class TokenRepository {
     /**
@@ -10,7 +11,7 @@ class TokenRepository {
         token: string,
         clientInfo: { ip: string, userAgent: string, deviceInfo?: string }
     ) {
-        const hashedToken = TokenRepository.hashToken(token);
+        const hashedToken = hashToken(token);
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 gün
 
         return await TokenModel.create({
@@ -26,13 +27,18 @@ class TokenRepository {
         });
     }
 
-
     /**
      * Refresh token'ı veritabanında bul (Hashed Token ile karşılaştırma yap)
      */
-    async findRefreshToken(userId: string, token: string): Promise<IToken | null> {
-        const hashedToken = TokenRepository.hashToken(token);
+    public async findRefreshToken(userId: string, token: string): Promise<IToken | null> {
+        const hashedToken = hashToken(token);
         const foundToken = await TokenModel.findOne({ user: userId, token: hashedToken, isRevoked: false });
+
+        // 🚨 Token süresi dolmuşsa direkt iptal et
+        if (foundToken && foundToken.expiresAt < new Date()) {
+            await this.revokeToken(token);
+            return null;
+        }
 
         if (foundToken) {
             await this.updateLastUsed(token);
@@ -40,49 +46,56 @@ class TokenRepository {
 
         return foundToken;
     }
-
-
     /**
      * Refresh Token'ın kullanım zamanını güncelle
      */
 
-    async updateLastUsed(token: string) {
-        const hashedToken = TokenRepository.hashToken(token);
+    public async updateLastUsed(token: string) {
+        const hashedToken = hashToken(token);
         return await TokenModel.updateOne({ token: hashedToken }, { lastUsedAt: new Date() });
     }
 
     /**
      * Kullanıcının eski refresh tokenlarını iptal et (Logout, yeni giriş vb. durumlarda)
      */
-    async revokeAllTokens(userId: string) {
+    public async revokeAllTokens(userId: string) {
         await TokenModel.updateMany({ user: userId }, { isRevoked: true });
     }
 
-    /**
+     /**
      * Tek bir refresh token'ı iptal et
      */
-    async revokeToken(token: string) {
-        const hashedToken = TokenRepository.hashToken(token);
+     async revokeToken(token: string) {
+        const hashedToken = hashToken(token);
         return await TokenModel.updateOne({ token: hashedToken }, { isRevoked: true });
     }
+
     /**
      * Token'ları hashleyerek saklamak için SHA-256 kullanıyoruz.
      */
-    public static hashToken(token: string): string {
+    public hashToken(token: string): string {
         return crypto.createHash('sha256').update(token).digest('hex');
     }
-
     /**
      * Kullanıcının refresh tokenlarını sınırlı tut
      */
     async enforceTokenLimit(userId: string, maxTokens = 5) {
-        const tokenCount = await TokenModel.countDocuments({ user: userId, isRevoked: false });
+        const tokens = await TokenModel.find({ user: userId, isRevoked: false }).sort({ createdAt: 1 });
 
-        if (tokenCount > maxTokens) {
-            await TokenModel.deleteMany({ 
-                user: userId, 
-                isRevoked: false 
-            }).sort({ createdAt: 1 }).limit(tokenCount - maxTokens);
+        if (tokens.length > maxTokens) {
+            const tokensToDelete = tokens.slice(0, tokens.length - maxTokens);
+            await TokenModel.deleteMany({ _id: { $in: tokensToDelete.map(t => t._id) } });
+        }
+    }
+    /**
+     * Şüpheli refresh token kullanımını kontrol et
+     */
+    public async detectSuspiciousActivity(userId: string, ip: string, userAgent: string) {
+        const recentTokens = await TokenModel.find({ user: userId, isRevoked: false }).sort({ lastUsedAt: -1 }).limit(5);
+
+        if (recentTokens.some(token => token.ip !== ip || token.userAgent !== userAgent)) {
+            console.warn(`🚨 Şüpheli giriş: Kullanıcı=${userId}, IP=${ip}, User-Agent=${userAgent}`);
+            await this.revokeAllTokens(userId);
         }
     }
 

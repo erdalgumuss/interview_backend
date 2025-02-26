@@ -1,37 +1,28 @@
-// src/modules/auth/models/user.model.ts
-
-import mongoose, {
-    Document,
-    Schema,
-    Types,
-    CallbackError,
-} from 'mongoose';
+import mongoose, { Document, Schema, Types, CallbackError } from 'mongoose';
 import bcrypt from 'bcrypt';
 
 export interface IUser extends Document {
-    _id: Types.ObjectId; // BURAYA EKLENDİ
+    _id: Types.ObjectId;
     name: string;
     email: string;
     password: string;
     role: 'admin' | 'company' | 'user';
     isActive: boolean;
 
-    // Güvenlik / hesap kilitleme
+    // Hesap kilitleme & giriş denemeleri
     accountLockedUntil?: Date;
     failedLoginAttempts: number;
-    clearPasswordResetToken(): Promise<void>;  // ✅ BURAYA EKLENDİ
 
-    // Doğrulamalar
+    // Doğrulama ve güvenlik alanları
     emailVerified: boolean;
     phoneVerified: boolean;
     emailVerificationToken?: string;
     emailVerificationExpires?: Date;
     phone?: string;
-    tokenVersion: number;  // ✅ Yeni eklenen alan
-    lastLoginAt?: Date;  // Son başarılı giriş zamanı
-    lastKnownIPs?: string[];  // Kullanıcının önceki giriş yaptığı IP'ler
-    sessionCount: number;  // Aktif oturum sayısı
-
+    tokenVersion: number;
+    lastLoginAt?: Date;
+    lastKnownIPs?: string[];
+    sessionCount: number;
 
     // Parola sıfırlama
     passwordResetToken?: string;
@@ -46,7 +37,7 @@ export interface IUser extends Document {
     profilePicture?: string;
     bio?: string;
 
-    // Erişim izinleri (örneğin farklı modüllere erişim)
+    // Erişim izinleri
     permissions: {
         module: string;
         accessLevel: 'read' | 'write' | 'delete';
@@ -56,11 +47,12 @@ export interface IUser extends Document {
     createdAt: Date;
     updatedAt: Date;
 
-    // ---------------------------
     // Metodlar
-    // ---------------------------
     comparePassword(candidatePassword: string): Promise<boolean>;
     incrementFailedLogins(): Promise<void>;
+    clearPasswordResetToken(): Promise<void>;
+    incrementTokenVersion(): Promise<void>;
+    updateLastLogin(ip: string): Promise<void>;
 }
 
 const UserSchema: Schema<IUser> = new Schema(
@@ -78,42 +70,33 @@ const UserSchema: Schema<IUser> = new Schema(
             required: true,
             minlength: 8,
         },
-
         role: {
             type: String,
             enum: ['admin', 'company', 'user'],
             default: 'user',
         },
         isActive: { type: Boolean, default: true },
-
         accountLockedUntil: { type: Date },
         failedLoginAttempts: { type: Number, default: 0 },
-
-
         emailVerified: { type: Boolean, default: false },
         phoneVerified: { type: Boolean, default: false },
         emailVerificationToken: { type: String },
         emailVerificationExpires: { type: Date },
-        tokenVersion: { type: Number, default: 0 },  // ✅ Yeni eklenen alan
-        lastLoginAt: { type: Date },  // Son başarılı giriş zamanı
-        lastKnownIPs: [{ type: String }],  // Kullanıcının önceki giriş yaptığı IP'ler
-        sessionCount: { type: Number, default: 0 },  // Aktif oturum sayısı
-        
+        tokenVersion: { type: Number, default: 0 },
+        lastLoginAt: { type: Date },
+        lastKnownIPs: [{ type: String }],
+        sessionCount: { type: Number, default: 0 },
         passwordResetToken: { type: String },
         passwordResetExpires: { type: Date },
         passwordResetTries: { type: Number, default: 0 },
-
         twoFactorEnabled: { type: Boolean, default: false },
         twoFactorSecret: { type: String },
-
         profilePicture: { type: String },
         bio: { type: String, trim: true },
-
         phone: {
             type: String,
-            match: /^\+?[1-9]\d{1,14}$/, // E.164 format
+            match: /^\+?[1-9]\d{1,14}$/,
         },
-
         permissions: {
             type: [
                 {
@@ -159,25 +142,54 @@ UserSchema.methods.comparePassword = async function (
 };
 
 /**
- * Başarısız giriş deneme sayısını arttırma
+ * Başarısız giriş deneme sayısını artırma
  */
 UserSchema.methods.incrementFailedLogins = async function (): Promise<void> {
     this.failedLoginAttempts += 1;
     if (this.failedLoginAttempts >= 5) {
-        this.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 dk kilit
+        this.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 dakika kilitle
     }
     await this.save();
 };
 
-UserSchema.methods.clearPasswordResetToken = async function () {
+/**
+ * Şifre sıfırlama tokenını temizleme
+ */
+UserSchema.methods.clearPasswordResetToken = async function (): Promise<void> {
     this.passwordResetToken = undefined;
     this.passwordResetExpires = undefined;
     await this.save();
 };
 
+/**
+ * Token versiyonunu artırma (ör. şifre değişiminde)
+ */
+UserSchema.methods.incrementTokenVersion = async function (): Promise<void> {
+    this.tokenVersion += 1;
+    await this.save();
+};
 
 /**
- * JSON dönüşümünde hassas bilgileri silme
+ * Son giriş zamanını güncelleme ve IP kaydını ekleme
+ * Son 5 IP saklanacak.
+ */
+UserSchema.methods.updateLastLogin = async function (ip: string): Promise<void> {
+    this.lastLoginAt = new Date();
+
+    if (!this.lastKnownIPs) {
+        this.lastKnownIPs = [];
+    }
+    if (!this.lastKnownIPs.includes(ip)) {
+        this.lastKnownIPs.push(ip);
+        if (this.lastKnownIPs.length > 5) {
+            this.lastKnownIPs.shift(); // İlk eklenen eski IP silinir
+        }
+    }
+    await this.save();
+};
+
+/**
+ * JSON dönüşümünde hassas bilgileri kaldırma
  */
 UserSchema.set('toJSON', {
     virtuals: true,

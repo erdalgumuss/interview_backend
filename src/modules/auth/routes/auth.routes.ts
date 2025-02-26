@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import { register, verifyEmail, login, logout, refreshAccessToken, requestPasswordReset, resetPassword } from '../controllers/auth.controller';
+import { authenticate } from '../../../middlewares/auth';
 
 const router = Router();
 
@@ -14,9 +15,9 @@ router.get('/verify-email', verifyEmail);
 // Login
 router.post('/login', login);
 
-router.post('/logout', logout);
+router.post('/logout',authenticate, logout);
 
-router.post('/refresh', refreshAccessToken);
+router.post('/refresh', authenticate, refreshAccessToken);
 
 router.post('/forgot-password', requestPasswordReset);
 router.post('/reset-password', resetPassword);
