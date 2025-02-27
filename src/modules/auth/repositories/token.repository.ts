@@ -33,19 +33,20 @@ class TokenRepository {
     public async findRefreshToken(userId: string, token: string): Promise<IToken | null> {
         const hashedToken = hashToken(token);
         const foundToken = await TokenModel.findOne({ user: userId, token: hashedToken, isRevoked: false });
-
-        // 🚨 Token süresi dolmuşsa direkt iptal et
+    
+        // 🚨 Token süresi dolmuşsa doğrudan revoke etme, girişe yönlendir.
         if (foundToken && foundToken.expiresAt < new Date()) {
-            await this.revokeToken(token);
-            return null;
+            console.warn(`🚨 Expired refresh token detected for user: ${userId}`);
+            return null; // Kullanıcıyı tekrar giriş yapmaya yönlendir.
         }
-
+    
         if (foundToken) {
             await this.updateLastUsed(token);
         }
-
+    
         return foundToken;
     }
+    
     /**
      * Refresh Token'ın kullanım zamanını güncelle
      */
@@ -109,9 +110,13 @@ class TokenRepository {
         newToken: string,
         clientInfo: { ip: string, userAgent: string, deviceInfo?: string }
     ) {
-        await this.revokeToken(oldToken);
+        await TokenModel.updateOne(
+            { user: userId, token: hashToken(oldToken) },
+            { isRevoked: true }
+        );
         await this.createRefreshToken(userId, newToken, clientInfo);
     }
+    
 }
 
 export default new TokenRepository();

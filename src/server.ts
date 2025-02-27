@@ -1,5 +1,7 @@
-import express from 'express';
 import dotenv from 'dotenv';
+dotenv.config();
+
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -9,10 +11,7 @@ import cookieParser from 'cookie-parser';
 //import { interviewStatusJob } from './jobs/interviewStatus.job';
 
 
-
-
-dotenv.config();
-
+// Uygulama
 const app = express();
 //interviewStatusJob(); // CRON Job başlat!
 

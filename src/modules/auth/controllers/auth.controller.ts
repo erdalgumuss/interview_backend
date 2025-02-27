@@ -83,7 +83,7 @@ export const login: RequestHandler = async (req, res, next) => {
           httpOnly: true,
           secure: process.env.COOKIE_SECURE === 'true',
           sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-          maxAge: 10 * 60 * 1000, // 10 dakika
+          maxAge: 10  * 100, // 10 dakika
           path: '/',
       });
 
@@ -105,7 +105,6 @@ export const login: RequestHandler = async (req, res, next) => {
                   name: user.name,
                   email: user.email,
                   role: user.role,
-                  profilePicture: user.profilePicture,
               }
           },
       });
@@ -155,8 +154,10 @@ export const logout: RequestHandler = async (req, res, next): Promise<void> => {
 // Refresh Access Token Controller
 export const refreshAccessToken: RequestHandler = async (req, res, next): Promise<void> => {
   try {
+    console.log("🔑 trya girdi controlcülde");
       // 1) Refresh token'ı cookie'den al
       const refreshToken = req.cookies.refresh_token;
+      console.log("🔑 refreshToken", refreshToken);
       if (!refreshToken) {
           console.warn('⚠ No refresh token provided.');
           res.status(401).json({ success: false, message: 'Unauthorized: No refresh token' });

@@ -14,6 +14,7 @@ import TokenRepository from '../repositories/token.repository';
 import { generatePasswordResetToken } from '../../../utils/tokenUtils';
 import { sendPasswordResetEmail } from '../../../utils/emailUtils';
 import jwt from 'jsonwebtoken';
+import TokenModel from '../models/token.model';
 
 class AuthService {
     /**
@@ -130,31 +131,49 @@ class AuthService {
                 throw new AppError('Refresh token is invalid due to version mismatch', ErrorCodes.UNAUTHORIZED, 401);
             }
     
-            // ✅ Hashlenmiş token ile veritabanında arama yap
-            const hashedRefreshToken = TokenRepository.hashToken(refreshToken);
-            const existingToken = await TokenRepository.findRefreshToken(decoded.userId, hashedRefreshToken);
+            // ✅ Hashlenmiş token ile doğrudan veritabanında arama yap
+            const existingToken = await TokenRepository.findRefreshToken(decoded.userId, refreshToken);
     
             if (!existingToken) {
                 await TokenRepository.revokeAllTokens(user._id.toString());
                 throw new AppError('Invalid refresh token', ErrorCodes.UNAUTHORIZED, 401);
             }
     
-            // ✅ IP & User-Agent Doğrulaması
+            // ✅ IP & User-Agent Kontrolü - Esnek Kontrol
             if (existingToken.ip !== clientInfo.ip || existingToken.userAgent !== clientInfo.userAgent) {
-                await AuthRepository.flagSuspiciousActivity(user._id.toString(), clientInfo.ip);
-                await TokenRepository.revokeAllTokens(user._id.toString());
-                throw new AppError('Suspicious refresh token detected', ErrorCodes.UNAUTHORIZED, 401);
+                console.warn(`🚨 Possible Suspicious Activity Detected: User=${user._id}, IP=${clientInfo.ip}, UA=${clientInfo.userAgent}`);
+                
+                // Kullanıcının son 5 girişini kontrol et (farklı cihazlardan bağlanıyor mu?)
+                const recentTokens = await TokenModel.find({ user: user._id, isRevoked: false })
+                                                     .sort({ lastUsedAt: -1 })
+                                                     .limit(5);
+                
+                const uniqueDevices = new Set(recentTokens.map(t => `${t.ip}:${t.userAgent}`));
+    
+                // Eğer 3 farklı cihazdan giriş yaptıysa, şüpheli etkinlik olarak işaretle
+                if (uniqueDevices.size >= 3) {
+                    await AuthRepository.flagSuspiciousActivity(user._id.toString(), clientInfo.ip);
+                    await TokenRepository.revokeAllTokens(user._id.toString());
+                    throw new AppError('Suspicious refresh token detected', ErrorCodes.UNAUTHORIZED, 401);
+                }
+            }
+    
+            // ✅ Token süresi kontrolü
+            if (existingToken.expiresAt < new Date()) {
+                console.warn(`🚨 Expired Refresh Token: User=${user._id}`);
+                throw new AppError('Refresh token expired. Please log in again.', ErrorCodes.UNAUTHORIZED, 401);
             }
     
             // ✅ Hashlenmiş token ile update işlemi yap
-            await TokenRepository.updateLastUsed(hashedRefreshToken);
+            await TokenRepository.updateLastUsed(refreshToken);
     
             // ✅ Yeni Access ve Refresh Token Üret
             const newAccessToken = generateAccessToken(user._id.toString(), user.role);
             const newRefreshToken = generateRefreshToken(user._id.toString(), user.tokenVersion);
+            console.log(`🔄 Access Token Refreshed: User=${user.email}`);
     
-            // ✅ Refresh Token’ı değiştir
-            await TokenRepository.replaceRefreshToken(user._id.toString(), hashedRefreshToken, TokenRepository.hashToken(newRefreshToken), clientInfo);
+            // ✅ Refresh Token’ı değiştir (Ancak eski cihazları etkileme)
+            await TokenRepository.replaceRefreshToken(user._id.toString(), refreshToken, newRefreshToken, clientInfo);
     
             return { accessToken: newAccessToken, refreshToken: newRefreshToken };
         } catch (error) {

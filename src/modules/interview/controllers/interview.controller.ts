@@ -180,7 +180,7 @@ class InterviewController {
                 return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
             }
 
-            const link = `https://myapp.com/interview/${id}`;
+            const link = `https://localhost:3001/application/${id}`;
             const updatedInterview = await this.interviewService.updateInterview(interview.id, {
                 interviewLink: {
                     link,

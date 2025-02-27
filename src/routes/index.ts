@@ -11,7 +11,7 @@ const loadRoutes = (app: Application): void => {
     // Örnek: /api/auth altına authRoutes bindi
     app.use('/api/auth', authRoutes);
     app.use('/api/profile', profileRoutes);
-    app.use('/api/interview', interviewRoutes);
+    app.use('/api/interviews', interviewRoutes);
     //app.use('/api/public', publicInterviewRouter);
 
 

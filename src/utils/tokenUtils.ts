@@ -10,7 +10,7 @@ interface TokenPayload extends JwtPayload {
 }
 
 const EMAIL_VERIFICATION_SECRET = process.env.EMAIL_VERIFICATION_SECRET || 'super_secret_key';
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
+const NEXT_PUBLIC_JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refreshSecret';
 
 /**
@@ -31,8 +31,15 @@ export function verifyEmailVerificationToken(token: string): { userId: string } 
  * Access Token üretir (Kısa süreli, userId ve role içerir)
  */
 export function generateAccessToken(userId: string, role: string): string {
-    return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: '10m' });
+
+  return jwt.sign({ userId, role }, NEXT_PUBLIC_JWT_SECRET, { 
+      expiresIn: '10s', // ✅ Geçerlilik süresi
+      algorithm: "HS256"  // ✅ Algoritma belirtiyoruz
+      
+  });
+  
 }
+
 
 /**
  * Refresh Token üretir (Kullanıcıya özel versiyon içerir)
@@ -46,7 +53,7 @@ export function generateRefreshToken(userId: string, version: number): string {
  */
 export function verifyAccessToken(token: string): TokenPayload {
     try {
-        const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+      const decoded = jwt.verify(token, NEXT_PUBLIC_JWT_SECRET, { algorithms: ["HS256"] }) as TokenPayload;
 
         if (!decoded.userId || !decoded.role) {
             console.error(`❌ Invalid token payload: ${JSON.stringify(decoded)}`);

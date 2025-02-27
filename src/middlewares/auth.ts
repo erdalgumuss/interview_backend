@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AppError } from '../middlewares/error/appError';
 import { ErrorCodes } from '../constants/errors';
+import { access } from 'fs';
 
 declare global {
     namespace Express {
@@ -15,36 +16,39 @@ declare global {
 }
 
 export function authenticate(req: Request, res: Response, next: NextFunction) {
+    console.log("🔑 JWT_SECRET from .env:", process.env.JWT_SECRET);
+
     try {
         let token: string | undefined;
 
         // Access token'ı önce cookie'den, sonra header'dan al
         if (req.cookies?.access_token) {
             token = req.cookies.access_token;
-        } else if (req.headers.authorization?.startsWith('Bearer ')) {
-            token = req.headers.authorization.split(' ')[1];
-        }
+        } 
 
         if (!token) {
             console.error('❌ No access token provided.');
-            return next(new AppError('Unauthorized: No token provided', ErrorCodes.UNAUTHORIZED, 401));
+            return next({ status: 401, message: 'Unauthorized: No token provided', code: 'TOKEN_INVALID' });
         }
 
         // Token'ı doğrula ve süresi doldu mu kontrol et
         let decoded;
+        console.log("🔑 token:", token);
+
         try {
             decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string; role: string; exp: number };
         } catch (err: any) {
             console.error(`❌ Token verification failed: ${err.name} - ${err.message}`);
+
             if (err.name === 'TokenExpiredError') {
-                return next(new AppError('Session expired, please log in again', ErrorCodes.UNAUTHORIZED, 401));
+                return next({ status: 401, message: 'Session expired, please log in again', code: 'TOKEN_EXPIRED' });
             }
-            return next(new AppError('Unauthorized: Invalid or expired token', ErrorCodes.UNAUTHORIZED, 401));
+            return next({ status: 401, message: 'Unauthorized: Invalid or expired token', code: 'TOKEN_INVALID' });
         }
 
         if (!decoded.userId || !decoded.role) {
-            console.error('❌ Invalid token payload:', decoded);
-            return next(new AppError('Unauthorized: Invalid token', ErrorCodes.UNAUTHORIZED, 401));
+            console.error(`❌ Invalid token payload: ${JSON.stringify(decoded)}`);
+            return next({ status: 401, message: 'Invalid token structure', code: 'TOKEN_INVALID' });
         }
 
         req.user = {
@@ -56,9 +60,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
         next();
     } catch (error) {
         console.error('❌ Authentication Error:', error);
-        next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401));
+        next({ status: 401, message: 'Unauthorized', code: 'UNAUTHORIZED' });
     }
 }
+
 
 // Aday doğrulama
 export const authenticateCandidate = (req: Request, res: Response, next: NextFunction) => {
