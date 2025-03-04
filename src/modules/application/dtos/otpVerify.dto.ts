@@ -13,7 +13,13 @@ export interface VerifyOtpDTO {
   otpCode: string;
 }
 export interface VerifyOtpResponseDTO {
-    token: string;
-    application: IApplication;
-  }
+  token: string;
+  application: IApplication;
+  newOtpSent: boolean;  // ✅ Yeni OTP gönderildi mi?
+  expiresAt?: Date;  // ✅ OTP'nin yeni süresi
+}
+export const resendOtpSchema = Joi.object({
+    applicationId: Joi.string().required(),
+    
+  });
   

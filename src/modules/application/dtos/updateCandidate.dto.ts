@@ -22,6 +22,7 @@ export const updateCandidateSchema = Joi.object({
     personal: Joi.array().items(Joi.string()).optional(),
     languages: Joi.array().items(Joi.string()).optional(),
   }).optional(),
+  
 });
 
 export interface UpdateCandidateDTO {

@@ -47,14 +47,17 @@ export class CandidateService {
       createdAt: interview.createdAt ?? new Date(),
       expirationDate: interview.expirationDate,
       status: interview.status,
-      personalityTestId: interview.personalityTestId?.toString(),
+      personalityTest: interview.personalityTestId
+          ? { id: interview.personalityTestId.toString(), required: true }
+          : null, // Eğer test yoksa null döneceğiz
       stages: interview.stages,
       questions: interview.questions.map(q => ({
-        questionText: q.questionText,
-        order: q.order,
-        duration: q.duration
+          questionText: q.questionText,
+          order: q.order,
+          duration: q.duration,
       })),
-    };
+  };
+  
   }
   
 
@@ -73,7 +76,19 @@ export class CandidateService {
     ) {
       throw new AppError('Interview is not accessible', ErrorCodes.FORBIDDEN, 403);
     }
-
+    const existingApplication = await this.candidateRepository.getApplicationByEmailAndInterview(
+      data.email,
+      data.interviewId
+  );
+  
+  if (existingApplication) {
+      throw new AppError(
+          'You have already applied for this interview.',
+          ErrorCodes.BAD_REQUEST,
+          400
+      );
+  }
+  
     const otpCode = generateRandomCode(6);
 
     const applicationData: Partial<IApplication> = {
@@ -90,45 +105,79 @@ export class CandidateService {
       status: 'pending',
     };
 
-    const createdApp = await this.applicationRepository.createApplication(applicationData);
+    const createdApp = await this.candidateRepository.createApplication(applicationData);
 
     console.log(`SMS sent to ${data.phone} with code ${otpCode}`);
 
-    return createdApp;
+    return {
+      ...createdApp.toObject(),
+      personalityTestRequired: interview.personalityTestId ? true : false,  // ✅ Kişilik testi bilgisi eklendi
+  };
   }
 
   /**
    * OTP kodu doğrulama -> phoneVerified = true
    */
-  public async verifyOtp(data: VerifyOtpDTO): Promise<VerifyOtpResponseDTO>{
+  public async verifyOtp(data: VerifyOtpDTO): Promise<VerifyOtpResponseDTO> {
     const { applicationId, otpCode } = data;
 
     const application = await this.candidateRepository.getApplicationByIdWithVerification(applicationId);
     if (!application) {
-      throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
+        throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
     }
 
-    // OTP expire kontrolü (opsiyonel)
-    // if (application.candidate.verificationExpiresAt && application.candidate.verificationExpiresAt < new Date()) {
-    //   throw new AppError('OTP code expired', ErrorCodes.UNAUTHORIZED, 401);
-    // }
+    let newOtpSent = false;  // ✅ Yeni OTP gönderildi mi?
+    if (application.candidate.verificationExpiresAt && application.candidate.verificationExpiresAt < new Date()) {
+        const newOtp = generateRandomCode(6);
+        application.candidate.verificationCode = newOtp;
+        application.candidate.verificationExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        newOtpSent = true;  // ✅ Yeni OTP oluşturulduğunu işaretle
+
+        await application.save();
+        console.log(`New OTP sent to ${application.candidate.phone}: ${newOtp}`);
+    }
 
     if (application.candidate.verificationCode !== otpCode) {
-      throw new AppError('Invalid OTP code', ErrorCodes.UNAUTHORIZED, 401);
+        throw new AppError('Invalid OTP code', ErrorCodes.UNAUTHORIZED, 401);
     }
 
     application.candidate.phoneVerified = true;
     application.candidate.verificationCode = undefined;
 
-    const updatedApp = await this.applicationRepository.updateApplicationById(applicationId, application);
-
+    const updatedApp = await this.candidateRepository.updateApplicationById(applicationId, application);
     if (!updatedApp) {
-      throw new AppError('Could not update application', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
+        throw new AppError('Could not update application', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
     }
+
     const token = generateCandidateToken(applicationId);
 
-    return { token, application: updatedApp };
+    return { token, application: updatedApp, newOtpSent };  // ✅ Yeni alan eklendi
+}
+
+
+  
+public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
+  const application = await this.candidateRepository.getApplicationById(applicationId);
+  if (!application) {
+      throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
   }
+
+  if (application.candidate.phoneVerified) {
+      throw new AppError('Phone already verified', ErrorCodes.BAD_REQUEST, 400);
+  }
+
+  const newOtp = generateRandomCode(6);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);  // ✅ Yeni OTP süresi eklendi
+  application.candidate.verificationCode = newOtp;
+  application.candidate.verificationExpiresAt = expiresAt;
+
+  await application.save();
+
+  console.log(`Resent OTP to ${application.candidate.phone}: ${newOtp}`);
+
+  return { expiresAt };  // ✅ Yeni alan eklendi
+}
+
 
   /**
    * Aday detay bilgilerini güncelleme işlemi.
@@ -159,8 +208,15 @@ export class CandidateService {
     application.status = 'in_progress';
   
     const updatedApplication = await this.candidateRepository.updateCandidate(applicationId, application);
-  
-    return updatedApplication;
+
+    if (!updatedApplication) {
+      throw new AppError('Could not update candidate', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
+    }
+
+    return {
+      ...updatedApplication.toObject(),
+      completed: true,  // ✅ Başvuru tamamlandı bilgisi eklendi
+  };
   }
   
 }

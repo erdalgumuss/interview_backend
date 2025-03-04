@@ -12,8 +12,10 @@ export interface GetPublicInterviewDTO {
     createdAt: Date;   // ✅ Yeni eklendi
     expirationDate: Date;
     status: string;
-    personalityTestId?: string;
-    stages: {
+    personalityTest?: { // ✅ Yeni ekleme
+      id: string;
+      required: true;
+  }| null;    stages: {
       personalityTest: boolean;
       questionnaire: boolean;
     };

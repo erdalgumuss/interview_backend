@@ -1,55 +1,64 @@
-// src/modules/application/routes/candidate.routes.ts
-
 import { Router } from 'express';
 import candidateController from '../controllers/candidate.controller';
 import { asyncHandler } from '../../../middlewares/asyncHandler';
-import { authenticateCandidate } from '../../../middlewares/auth';  // ✅ Token doğrulama için
-import { rateLimitMiddleware } from '../../../middlewares/rateLimitMiddleware';  // ✅ OTP spam'ı engellemek için
-import { validateRequest } from '../../../middlewares/validationMiddleware'; // ✅ Joi DTO validasyonu
+import { authenticateCandidate } from '../../../middlewares/auth';
+import { rateLimitMiddleware } from '../../../middlewares/rateLimitMiddleware';
+import { validateRequest } from '../../../middlewares/validationMiddleware';
 import { createApplicationSchema } from '../dtos/createApplication.dto';
-import { verifyOtpSchema } from '../dtos/otpVerify.dto';
+import { verifyOtpSchema, resendOtpSchema } from '../dtos/otpVerify.dto';
 import { updateCandidateSchema } from '../dtos/updateCandidate.dto';
 
 const router = Router();
 
 /**
- * ✅ Public Interview Route (Kimlik doğrulama gerekmez)
- * GET /api/public/:interviewId
+ * ✅ 1) Mülakat detaylarını getirme
+ * GET /api/public/interview/:interviewId
  */
 router.get(
-  '/:interviewId',
+  '/interview/:interviewId',
   asyncHandler(candidateController.getPublicInterview)
 );
 
 /**
- * ✅ 1) Aday form verilerini gönderip OTP kodu alır (Rate Limitli)
+ * ✅ 2) Aday başvuru oluşturma (Aynı mülakata tekrar başvurmayı engeller!)
  * POST /api/public
  */
 router.post(
   '/',
-  rateLimitMiddleware({ windowMs: 10 * 60 * 1000, max: 3 }), // ❌ 10 dk içinde max 3 kez başvurabilir.
-  validateRequest(createApplicationSchema), // ✅ Validasyon middleware
+  rateLimitMiddleware({ windowMs: 10 * 60 * 1000, max: 3 }),
+  validateRequest(createApplicationSchema),
   asyncHandler(candidateController.createApplication)
 );
 
 /**
- * ✅ 2) OTP doğrulama (Rate Limitli)
+ * ✅ 3) OTP doğrulama
  * POST /api/public/verifyOtp
  */
 router.post(
   '/verifyOtp',
-  rateLimitMiddleware({ windowMs: 5 * 60 * 1000, max: 5 }), // ❌ 5 dk içinde max 5 OTP denemesi yapılabilir.
+  rateLimitMiddleware({ windowMs: 5 * 60 * 1000, max: 5 }),
   validateRequest(verifyOtpSchema),
   asyncHandler(candidateController.verifyOtp)
 );
 
 /**
- * ✅ 3) Aday detay bilgilerini güncelleme (Kimlik Doğrulamalı)
- * PUT /api/candidate/update
+ * ✅ 4) OTP tekrar gönderme (Yeni API eklendi)
+ * POST /api/public/resendOtp
+ */
+router.post(
+  '/resendOtp',
+  rateLimitMiddleware({ windowMs: 5 * 60 * 1000, max: 3 }),
+  validateRequest(resendOtpSchema),
+  asyncHandler(candidateController.resendOtp)
+);
+
+/**
+ * ✅ 5) Aday detay bilgilerini güncelleme
+ * PUT /api/public/update
  */
 router.put(
   '/update',
-  authenticateCandidate,  // ✅ Token ile yetkilendirme
+  authenticateCandidate,
   validateRequest(updateCandidateSchema),
   asyncHandler(candidateController.updateCandidateDetails)
 );

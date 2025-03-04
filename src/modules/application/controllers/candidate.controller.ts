@@ -7,6 +7,7 @@ import { ErrorCodes } from '../../../constants/errors';
 import { CreateApplicationDTO, createApplicationSchema } from '../dtos/createApplication.dto';
 import { VerifyOtpDTO, verifyOtpSchema } from '../dtos/otpVerify.dto';
 import { updateCandidateSchema } from '../dtos/updateCandidate.dto';
+import { resendOtpSchema } from '../dtos/otpVerify.dto';  // ✅ Yeni ekleme
 
 class CandidateController {
   private candidateService: CandidateService;
@@ -70,7 +71,9 @@ class CandidateController {
       next(err);
     }
   };
-
+  public getService(): CandidateService {
+    return this.candidateService;  // ✅ Getter fonksiyon ile erişim sağlanıyor
+}
   /**
    * OTP doğrulama
    */
@@ -82,7 +85,8 @@ public verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
     // 1) Validasyon
     const { error } = verifyOtpSchema.validate(req.body);
     if (error) {
-      throw new AppError(error.message, ErrorCodes.BAD_REQUEST, 400);
+      throw new AppError('The OTP code is incorrect. Please try again.', ErrorCodes.UNAUTHORIZED, 401);
+
     }
     const dto = req.body as VerifyOtpDTO;
 
@@ -103,7 +107,25 @@ public verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
     next(err);
   }
 };
+public async resendOtp(req: Request, res: Response, next: NextFunction) {
+  try {
+      // ✅ Validasyon
+      const { error } = resendOtpSchema.validate(req.body);
+      if (error) {
+          throw new AppError(error.message, ErrorCodes.BAD_REQUEST, 400);
+      }
 
+      const { applicationId } = req.body;
+      await this.candidateService.resendOtp(applicationId);
+
+      res.status(200).json({
+          success: true,
+          message: 'A new OTP has been sent to your phone.',
+      });
+  } catch (err) {
+      next(err);
+  }
+}
   /**
    * Aday kişisel bilgilerini günceller.
    */
@@ -112,8 +134,9 @@ public verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
       // Gelen veriyi validasyon şeması ile doğrula
       const { error } = updateCandidateSchema.validate(req.body);
       if (error) {
-        throw new Error(error.message);
-      }
+        throw new AppError(error.message, ErrorCodes.BAD_REQUEST, 400); // ✅ Daha kontrollü hata yönetimi
+    }
+    
 
       const updatedApplication = await this.candidateService.updateCandidateDetails(req.body);
       

@@ -12,6 +12,7 @@ export interface ICandidateProfile {
     phone: string;
     phoneVerified: boolean;
     verificationCode?: string;
+    verificationExpiresAt?: Date; // ✅ Yeni alan eklendi
     kvkkConsent?: boolean;
     education?: {
         school: string;
@@ -125,7 +126,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             phone: { type: String, required: true },
             phoneVerified: { type: Boolean, default: false },
             verificationCode: { type: String, select: false },
-            verificationExpiresAt: { type: Date, default: () => new Date(Date.now() + 10 * 60 * 1000) }, 
+            verificationExpiresAt: { type: Date, default: () => new Date(Date.now() + 10 * 60 * 1000) },  // ✅ Yeni ekleme
             kvkkConsent: { type: Boolean, default: false },
             education: [
                 {

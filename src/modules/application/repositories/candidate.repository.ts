@@ -1,4 +1,5 @@
 
+import { Types } from 'mongoose';
 import InterviewModel, { IInterview } from '../../interview/models/interview.model';
 import ApplicationModel, { IApplication } from '../models/application.model';
 
@@ -13,7 +14,7 @@ export class CandidateRepository {
    * Gizli alanları hariç tutmak için projection yapıyoruz.
    */
   public async getInterviewPublicById(interviewId: string): Promise<IInterview | null> {
-    return InterviewModel.findById(interviewId, {
+    const interview = await InterviewModel.findById(interviewId, {
       _id: 1,          // ✅ ID'yi döndürüyoruz
       createdAt: 1,
       title: 1,
@@ -26,6 +27,10 @@ export class CandidateRepository {
       'questions.duration': 1,
       // expectedAnswer, keywords vb. alanları EXCLUDE ediyoruz
     }).exec();
+    if (!interview || interview.status !== 'active' || (interview.expirationDate && interview.expirationDate < new Date())) {
+      return null;  // Mülakat geçersizse null döndür
+    }
+    return  interview;
   }
   public async getApplicationByIdWithVerification(
     applicationId: string
@@ -34,6 +39,14 @@ export class CandidateRepository {
       .select('+candidate.verificationCode')
       .exec();
   }
+   /**
+   * Yeni bir başvuru (Application) oluştur.
+   */
+   public async createApplication(data: Partial<IApplication>): Promise<IApplication> {
+    const application = new ApplicationModel(data);
+    return application.save();
+  }
+
     /**
    * Adayın başvurusunu getir.
    */
@@ -46,4 +59,25 @@ export class CandidateRepository {
     public async updateCandidate(applicationId: string, updateData: Partial<IApplication>): Promise<IApplication | null> {
       return ApplicationModel.findByIdAndUpdate(applicationId, updateData, { new: true }).exec();
     }
+      /**
+   * Başvuruyu güncelle. (Genel amaçlı)
+   */
+  public async updateApplicationById(
+    applicationId: string,
+    updateData: Partial<IApplication>
+  ): Promise<IApplication | null> {
+    return ApplicationModel.findByIdAndUpdate(
+      applicationId,
+      updateData,
+      { new: true }
+    ).exec();
+  }
+  
+  public async getApplicationByEmailAndInterview(email: string, interviewId: string): Promise<IApplication | null> {
+    return ApplicationModel.findOne({
+        'candidate.email': email,
+        interviewId: new Types.ObjectId(interviewId),
+    }).exec();
+}
+
 }

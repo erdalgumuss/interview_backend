@@ -4,14 +4,7 @@ import { Types } from 'mongoose';
 import ApplicationModel, { IApplication } from '../models/application.model';
 
 export class ApplicationRepository {
-  /**
-   * Yeni bir başvuru (Application) oluştur.
-   */
-  public async createApplication(data: Partial<IApplication>): Promise<IApplication> {
-    const application = new ApplicationModel(data);
-    return application.save();
-  }
-
+ 
   /**
    * ID'ye göre başvuru getir (detay).
    */
@@ -60,19 +53,6 @@ export class ApplicationRepository {
       .exec();
   }
 
-  /**
-   * Başvuruyu güncelle. (Genel amaçlı)
-   */
-  public async updateApplicationById(
-    applicationId: string,
-    updateData: Partial<IApplication>
-  ): Promise<IApplication | null> {
-    return ApplicationModel.findByIdAndUpdate(
-      applicationId,
-      updateData,
-      { new: true }
-    ).exec();
-  }
 
   /**
    * Başvuruda yeni bir 'supportRequest' ekle.
