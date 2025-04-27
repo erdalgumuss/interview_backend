@@ -12,7 +12,7 @@ export interface ICandidateProfile {
     phone: string;
     phoneVerified: boolean;
     verificationCode?: string;
-    verificationExpiresAt?: Date; // ✅ Yeni alan eklendi
+    verificationExpiresAt?: Date;
     kvkkConsent?: boolean;
     education?: {
         school: string;
@@ -39,12 +39,12 @@ export interface ICandidateProfile {
 
 /**
  * -----------------------------
- *  IApplicationResponse Interface (SADELEŞTİRİLDİ)
+ *  IApplicationResponse Interface
  * -----------------------------
  */
 export interface IApplicationResponse {
     questionId: mongoose.Types.ObjectId;
-    textAnswer?: string;  // ✅ SADECE text tabanlı yanıtları tutuyoruz.
+    textAnswer?: string; // AI analizden sonra oluşacak yazılı yanıt
 }
 
 /**
@@ -81,13 +81,12 @@ export interface ISupportRequest {
  * -----------------------------
  */
 export interface IApplication extends Document {
-    _id: mongoose.Types.ObjectId;
     interviewId: mongoose.Types.ObjectId;
     candidate: ICandidateProfile;
     status: 'pending' | 'in_progress' | 'completed' | 'rejected' | 'accepted';
     personalityTestResults?: IPersonalityTestResults;
-    responses: IApplicationResponse[];  // ✅ SADECE text-based cevaplar var.
-    aiAnalysisResults: mongoose.Types.ObjectId[]; // ✅ Video analizleri `VideoResponseModel` içinde olacak.
+    responses: IApplicationResponse[];
+    aiAnalysisResults: mongoose.Types.ObjectId[];
     latestAIAnalysisId?: mongoose.Types.ObjectId;
     generalAIAnalysis?: {
         overallScore?: number;
@@ -96,7 +95,10 @@ export interface IApplication extends Document {
         problemSolvingScore?: number;
         personalityMatchScore?: number;
         strengths?: string[];
-        areasForImprovement?: string[];
+        areasForImprovement?: {
+            area: string;
+            recommendedAction: string;
+        }[];
         recommendation?: string;
     };
     allowRetry: boolean;
@@ -126,7 +128,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             phone: { type: String, required: true },
             phoneVerified: { type: Boolean, default: false },
             verificationCode: { type: String, select: false },
-            verificationExpiresAt: { type: Date, default: () => new Date(Date.now() + 10 * 60 * 1000) },  // ✅ Yeni ekleme
+            verificationExpiresAt: { type: Date, default: () => new Date(Date.now() + 10 * 60 * 1000) },
             kvkkConsent: { type: Boolean, default: false },
             education: [
                 {
@@ -140,7 +142,7 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
                     company: { type: String },
                     position: { type: String },
                     duration: { type: String },
-                    responsibilities: { type: String, required: false },
+                    responsibilities: { type: String },
                 },
             ],
             skills: {
@@ -171,10 +173,14 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             },
             personalityFit: { type: Number, default: 0 },
         },
+        responses: [
+            {
+                questionId: { type: mongoose.Schema.Types.ObjectId, required: true },
+                textAnswer: { type: String },
+            }
+        ],
+        aiAnalysisResults: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AIAnalysis' }],
         latestAIAnalysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'AIAnalysis' },
-        allowRetry: { type: Boolean, default: false },
-        maxRetryAttempts: { type: Number, default: 1 },
-        retryCount: { type: Number, default: 0 },
         generalAIAnalysis: {
             overallScore: { type: Number },
             technicalSkillsScore: { type: Number },
@@ -185,11 +191,20 @@ const ApplicationSchema: Schema<IApplication> = new Schema(
             areasForImprovement: [
                 {
                     area: { type: String },
-                    recommendedAction: { type: String }
+                    recommendedAction: { type: String },
                 }
             ],
             recommendation: { type: String },
-        }
+        },
+        allowRetry: { type: Boolean, default: false },
+        maxRetryAttempts: { type: Number, default: 1 },
+        retryCount: { type: Number, default: 0 },
+        supportRequests: [
+            {
+                timestamp: { type: Date, required: true },
+                message: { type: String, required: true },
+            }
+        ]
     },
     { timestamps: true }
 );

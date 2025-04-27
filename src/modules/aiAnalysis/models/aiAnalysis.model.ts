@@ -1,106 +1,69 @@
-// src/modules/aiAnalysis/models/aiAnalysis.model.ts
-
 import mongoose, { Schema, Document } from 'mongoose';
 
 /**
  * -----------------------------
  *  IAIAnalysis Interface
  * -----------------------------
- * Uygulama (Application) veya Mülakat (Interview) bazlı yapay zeka analiz sonuçlarını tutar.
+ * Her bir video için AI analizi sonucu burada tutulur.
  */
 export interface IAIAnalysis extends Document {
-    applicationId: mongoose.Types.ObjectId;    // Hangi başvuruya (Application) ait
-    interviewId: mongoose.Types.ObjectId;     // Hangi mülakata (Interview) ait
-    questionId?: mongoose.Types.ObjectId;      // Hangi soruya ait
-    analysisType: 'question' | 'general';      // Soru bazlı mı, genel mi?
-    scores: {
-        overall?: number;
-        technicalSkills?: number;
-        communication?: number;
-        problemSolving?: number;
-        personalityFit?: number;
-    };
-    facialAnalysis?: {
-        emotions?: Record<string, number>;       // { happy: 70, sad: 30 } gibi
-        engagement?: number;
-    };
-    strengths?: string[];
-    areasForImprovement?: string[];
-    recommendation?: string;
-    createdAt?: Date; // timestamps: true ile otomatik eklenecek, bu nedenle opsiyonel
-    updatedAt?: Date; // timestamps: true ile otomatik eklenecek, bu nedenle opsiyonel
+  videoResponseId: mongoose.Types.ObjectId; // Video ile bağlantı
+  applicationId: mongoose.Types.ObjectId;   // Başvuru ile bağlantı
+  questionId: mongoose.Types.ObjectId;      // Hangi soruya ait olduğu
+
+  transcriptionText: string;                // Videodan AI tarafından çıkarılan metin
+  overallScore?: number;                    // Genel puan
+  technicalSkillsScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  personalityMatchScore?: number;
+
+  keywordMatches?: string[];                 // Anahtar kelime eşleşmeleri
+  strengths?: string[];                      // Güçlü yönler
+  improvementAreas?: {
+    area: string;
+    recommendation: string;
+  }[];
+
+  recommendation?: string;                   // Genel AI önerisi
+  analyzedAt: Date;                           // AI analizin yapıldığı zaman
 }
 
-/**
- * -----------------------------
- *  Mongoose Schema Tanımlaması
- * -----------------------------
- */
-const AIAnalysisSchema = new Schema<IAIAnalysis>(
-    {
-        applicationId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Application',
-            required: true,
-        },
-        interviewId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Interview',
-            required: true,
-        },
-        questionId: {
-            type: mongoose.Schema.Types.ObjectId,
+const AIAnalysisSchema: Schema<IAIAnalysis> = new Schema(
+  {
+    videoResponseId: { type: mongoose.Schema.Types.ObjectId, ref: 'VideoResponse', required: true },
+    applicationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Application', required: true },
+    questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'InterviewQuestion', required: true },
 
-        },
-        analysisType: {
-            type: String,
-            enum: ['question', 'general'],
-            default: 'question',
-        },
-        scores: {
-            overall: { type: Number },
-            technicalSkills: { type: Number },
-            communication: { type: Number },
-            problemSolving: { type: Number },
-            personalityFit: { type: Number },
-        },
-        facialAnalysis: {
-            emotions: {
-                type: Map,
-                of: Number,
-            },
-            engagement: { type: Number },
-        },
-        strengths: [
-            {
-                type: String,
-            },
-        ],
-        areasForImprovement: [
-            {
-                type: String,
-            },
-        ],
+    transcriptionText: { type: String, required: true },
+
+    overallScore: { type: Number },
+    technicalSkillsScore: { type: Number },
+    communicationScore: { type: Number },
+    problemSolvingScore: { type: Number },
+    personalityMatchScore: { type: Number },
+
+    keywordMatches: { type: [String], default: [] },
+    strengths: { type: [String], default: [] },
+    improvementAreas: [
+      {
+        area: { type: String },
         recommendation: { type: String },
-    },
-    {
-        timestamps: true, // createdAt & updatedAt otomatik eklenir
-    }
+      }
+    ],
+
+    recommendation: { type: String },
+    analyzedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true } // createdAt ve updatedAt otomatik olacak
 );
 
 /**
- * -----------------------------
- *  Indexler (Arama/Performans)
- * -----------------------------
+ * Indexler (Performans için)
  */
 AIAnalysisSchema.index({ applicationId: 1 });
-AIAnalysisSchema.index({ interviewId: 1 });
+AIAnalysisSchema.index({ videoResponseId: 1 });
+AIAnalysisSchema.index({ questionId: 1 });
 
-/**
- * -----------------------------
- *  Model Oluşturma
- * -----------------------------
- */
 const AIAnalysisModel = mongoose.model<IAIAnalysis>('AIAnalysis', AIAnalysisSchema);
-
 export default AIAnalysisModel;

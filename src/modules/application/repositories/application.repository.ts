@@ -76,38 +76,38 @@ export class ApplicationRepository {
     ).exec();
   }
 
-  /**
-   * Belirli bir soruya (questionId) ait video cevabını ekle veya güncelle.
-   */
-  public async addOrUpdateVideoResponse(
-    applicationId: string,
-    questionId: string,
-    videoData: {
-      videoUrl: string;
-      textAnswer?: string;
-      aiAnalysisId?: Types.ObjectId;
-    }
-  ): Promise<IApplication | null> {
-    // Bir approach: 'responses.questionId' eşleşirse güncelle, yoksa ekle
-    return ApplicationModel.findOneAndUpdate(
-      {
-        _id: applicationId,
-        'responses.questionId': new Types.ObjectId(questionId),
-      },
-      {
-        $set: {
-          'responses.$.videoUrl': videoData.videoUrl,
-          'responses.$.textAnswer': videoData.textAnswer,
-          'responses.$.aiAnalysisId': videoData.aiAnalysisId,
-        },
-      },
-      {
-        new: true,
-        // Bu dokümanda questionId yoksa ekle (upsert benzeri bir yaklaşım)
-        // upsert: true // Dikkat: İstenmeyen durumlara yol açabilir
-      }
-    ).exec();
-  }
+  // /**
+  //  * Belirli bir soruya (questionId) ait video cevabını ekle veya güncelle.
+  //  */
+  // public async addOrUpdateVideoResponse(
+  //   applicationId: string,
+  //   questionId: string,
+  //   videoData: {
+  //     videoUrl: string;
+  //     textAnswer?: string;
+  //     aiAnalysisId?: Types.ObjectId;
+  //   }
+  // ): Promise<IApplication | null> {
+  //   // Bir approach: 'responses.questionId' eşleşirse güncelle, yoksa ekle
+  //   return ApplicationModel.findOneAndUpdate(
+  //     {
+  //       _id: applicationId,
+  //       'responses.questionId': new Types.ObjectId(questionId),
+  //     },
+  //     {
+  //       $set: {
+  //         'responses.$.videoUrl': videoData.videoUrl,
+  //         'responses.$.textAnswer': videoData.textAnswer,
+  //         'responses.$.aiAnalysisId': videoData.aiAnalysisId,
+  //       },
+  //     },
+  //     {
+  //       new: true,
+  //       // Bu dokümanda questionId yoksa ekle (upsert benzeri bir yaklaşım)
+  //       // upsert: true // Dikkat: İstenmeyen durumlara yol açabilir
+  //     }
+  //   ).exec();
+  // }
 
   /**
    * Hard delete - Tamamen siler.
