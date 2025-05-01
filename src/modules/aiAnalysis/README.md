@@ -70,9 +70,7 @@ AI sunucusuna istek atılamazsa hata loglanır ve 503 döndürülür.
 AI'dan alınan her sonuç detaylı kontrol edilip veritabanına güvenli şekilde kaydedilir.
 
 🎬 Genel AI Analizi Süreci
-mermaid
-Kopyala
-Düzenle
+
 sequenceDiagram
 Aday ->> Sunucu: Video yükler
 Sunucu ->> AIAnalysisService: Kuyruğa ekler (async)
@@ -82,9 +80,6 @@ AIAnalysisService ->> MongoDB: AI sonucu kaydeder
 AIAnalysisService ->> Application: Başvuru kaydını günceller
 🛠️ Kullanım Örnekleri
 Tek Bir Videoyu Analiz Etmek
-typescript
-Kopyala
-Düzenle
 const aiService = new AIAnalysisService();
 await aiService.analyzeSingleVideo('VIDEO_RESPONSE_ID');
 Bir Başvuruya Ait Genel AI Analizi Çıkarmak

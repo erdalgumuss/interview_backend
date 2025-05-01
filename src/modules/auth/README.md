@@ -23,7 +23,7 @@ POST /auth/reset-password Gelen token ile şifreyi sıfırlar.
 🛠️ Yapı ve Akış
 
 1. Controller Katmanı (controllers/auth.controller.ts)
-   HTTP isteklerini karşılar ve gerekli service/metotları tetikler.
+   **HTTP isteklerini karşılar ve gerekli service/metotları tetikler.**
 
 register: Kullanıcıyı kaydeder ve email doğrulama token'ı yollar.
 
@@ -81,9 +81,6 @@ Token Versioning: Kullanıcı her giriş yaptığında refresh token versiyonu a
 
 🔥 Kullanım Örnekleri
 Kayıt Ol (Register)
-http
-Kopyala
-Düzenle
 POST /auth/register
 Content-Type: application/json
 
@@ -93,9 +90,7 @@ Content-Type: application/json
 "password": "SecurePassword123"
 }
 Email Doğrulama
-http
-Kopyala
-Düzenle
+
 GET /auth/verify-email?token=xxx
 Giriş Yap (Login)
 http
@@ -109,9 +104,7 @@ Content-Type: application/json
 "password": "SecurePassword123"
 }
 Refresh Token
-http
-Kopyala
-Düzenle
+
 POST /auth/refresh
 (Refresh token cookie içinde gönderilir)
 📦 Önemli Bağımlılıklar

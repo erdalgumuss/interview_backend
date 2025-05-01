@@ -6,9 +6,6 @@ Proje Amacı
 Adayların video yanıtları üzerinden AI destekli analiz yaparak, insan kaynakları süreçlerini daha adil, verimli ve hızlı hale getirmek.
 
 Genel Sistem Akışı
-markdown
-Kopyala
-Düzenle
 
 1. İK Kullanıcısı → Mülakat oluşturur (soru setleri, süreler, testler)
 2. Aday → Mülakat linkinden başvurur, OTP doğrulaması yapar

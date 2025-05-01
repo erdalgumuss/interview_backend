@@ -103,7 +103,5 @@ Error Handling Hatalar AppError ile proper şekilde fırlatılır.
 Validasyon Her istek DTO + Joi validator ile kontrol edilir.
 Kod Temizliği Dead-code, yorum satırı bırakılmaz. Her dosya temiz olmalı(versiyonlama aşamasında geçerli).
 📦 Özet Akış
-css
-Kopyala
-Düzenle
-Görev al → Branch aç → Kodla → Test et → PR aç → Review al → Merge → Temizlik yap
+
+`***Görev al → Branch aç → Kodla → Test et → PR aç → Review al → Merge → Temizlik yap***`

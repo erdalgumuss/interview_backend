@@ -4,10 +4,6 @@ import InterviewModel, { IInterview } from '../../interview/models/interview.mod
 import ApplicationModel, { IApplication } from '../models/application.model';
 
 export class CandidateRepository {
-  getInterviewById(interviewId: string) {
-      throw new Error('Method not implemented.');
-  }
-  // ... diğer metotlar
 
   /**
    * Public endpoint için mülakat bilgisi getir.

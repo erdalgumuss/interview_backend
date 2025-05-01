@@ -9,13 +9,14 @@ export class ApplicationRepository {
    * ID'ye göre başvuru getir (detay).
    */
   public async getApplicationById(applicationId: string): Promise<IApplication | null> {
-    // Populate örneği: Mülakat ve AI analizlerini çek
     return ApplicationModel
       .findById(applicationId)
       .populate('interviewId', 'title status expirationDate') 
       .populate('aiAnalysisResults')
+      .populate('latestAIAnalysisId') // Eklenebilir
       .exec();
   }
+
 
   /**
    * Bir mülakata (Interview) ait tüm başvuruları getir.
@@ -76,38 +77,6 @@ export class ApplicationRepository {
     ).exec();
   }
 
-  // /**
-  //  * Belirli bir soruya (questionId) ait video cevabını ekle veya güncelle.
-  //  */
-  // public async addOrUpdateVideoResponse(
-  //   applicationId: string,
-  //   questionId: string,
-  //   videoData: {
-  //     videoUrl: string;
-  //     textAnswer?: string;
-  //     aiAnalysisId?: Types.ObjectId;
-  //   }
-  // ): Promise<IApplication | null> {
-  //   // Bir approach: 'responses.questionId' eşleşirse güncelle, yoksa ekle
-  //   return ApplicationModel.findOneAndUpdate(
-  //     {
-  //       _id: applicationId,
-  //       'responses.questionId': new Types.ObjectId(questionId),
-  //     },
-  //     {
-  //       $set: {
-  //         'responses.$.videoUrl': videoData.videoUrl,
-  //         'responses.$.textAnswer': videoData.textAnswer,
-  //         'responses.$.aiAnalysisId': videoData.aiAnalysisId,
-  //       },
-  //     },
-  //     {
-  //       new: true,
-  //       // Bu dokümanda questionId yoksa ekle (upsert benzeri bir yaklaşım)
-  //       // upsert: true // Dikkat: İstenmeyen durumlara yol açabilir
-  //     }
-  //   ).exec();
-  // }
 
   /**
    * Hard delete - Tamamen siler.
@@ -124,8 +93,9 @@ export class ApplicationRepository {
   ): Promise<IApplication | null> {
     return ApplicationModel.findByIdAndUpdate(
       applicationId,
-      { status: 'canceled' }, // veya { deletedAt: new Date() }
+      { status: 'rejected' }, // 'canceled' yerine geçerli bir enum kullanıldı
       { new: true }
     ).exec();
   }
+
 }
