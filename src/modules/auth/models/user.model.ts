@@ -8,6 +8,12 @@ export interface IUser extends Document {
     password: string;
     role: 'admin' | 'company' | 'user';
     isActive: boolean;
+    preferences?: {
+        language?: 'en' | 'es' | 'fr' | 'tr';
+        themeMode?: 'light' | 'dark'; // Backend'deki isimlendirme
+        notificationsEnabled?: boolean;
+        timezone?: string;
+    };
 
     // Hesap kilitleme & giriş denemeleri
     accountLockedUntil?: Date;
@@ -72,7 +78,7 @@ const UserSchema: Schema<IUser> = new Schema(
         },
         role: {
             type: String,
-            enum: ['admin', 'company', 'user'],
+            enum: ['admin', 'company', 'user', 'super_admin'],
             default: 'user',
         },
         isActive: { type: Boolean, default: true },
@@ -97,6 +103,7 @@ const UserSchema: Schema<IUser> = new Schema(
             type: String,
             match: /^\+?[1-9]\d{1,14}$/,
         },
+        
         permissions: {
             type: [
                 {
@@ -108,6 +115,15 @@ const UserSchema: Schema<IUser> = new Schema(
                 },
             ],
             default: [],
+        },
+        preferences: {
+            type: {
+                language: { type: String, enum: ['en', 'es', 'fr', 'tr'], default: 'tr' },
+                themeMode: { type: String, enum: ['light', 'dark'], default: 'light' },
+                notificationsEnabled: { type: Boolean, default: true },
+                timezone: { type: String, default: 'Europe/Istanbul' },
+            },
+            default: {},
         },
     },
     {

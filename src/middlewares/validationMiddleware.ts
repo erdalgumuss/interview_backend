@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
-import { AppError } from './error/appError'; // Hata yönetim sınıfını içe aktarıyoruz
+import { AppError } from './errors/appError'; // Hata yönetim sınıfını içe aktarıyoruz
 import { ErrorCodes } from '../constants/errors'; // Hata kodları için
 
 /**

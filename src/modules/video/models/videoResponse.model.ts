@@ -9,6 +9,7 @@ export interface IVideoResponse extends Document {
   duration: number;
   status: 'pending' | 'processed';
   uploadedAt: Date;
+  aiAnalysisId?: mongoose.Types.ObjectId;
 }
 
 const VideoResponseSchema: Schema<IVideoResponse> = new Schema(

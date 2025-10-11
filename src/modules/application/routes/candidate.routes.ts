@@ -62,5 +62,10 @@ router.put(
   validateRequest(updateCandidateSchema),
   asyncHandler(candidateController.updateCandidateDetails)
 );
+// 6. Video yanıtı kaydetme (URL)
+router.post('/video/response', authenticateCandidate, candidateController.submitVideoResponse);
+
+// 7. Kişilik testi yanıtlarını kaydetme
+router.post('/personality-test/response', authenticateCandidate, candidateController.submitPersonalityTestResponse);
 
 export default router;

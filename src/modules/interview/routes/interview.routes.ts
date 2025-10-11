@@ -3,7 +3,7 @@ import interviewController from '../controllers/interview.controller';
 import { authenticate } from '../../../middlewares/auth';
 import { validateRequest } from '../../../middlewares/validationMiddleware';
 import { createInterviewSchema } from '../dtos/createInterview.dto';
-import { updateInterviewSchema } from '../dtos/updateInterview.dto';
+//import { updateInterviewSchema } from '../dtos/updateInterview.dto';
 import { Request, Response, NextFunction } from 'express';
 
 const router = Router();
@@ -27,18 +27,18 @@ router.get('/my', authenticate, asyncHandler(interviewController.getUserIntervie
 router.get('/:id', authenticate, asyncHandler(interviewController.getInterviewById.bind(interviewController)));
 
 // 📌 Mülakat güncelleme
-router.put('/:id', authenticate, validateRequest(updateInterviewSchema), asyncHandler(interviewController.updateInterview.bind(interviewController)));
+//router.put('/:id', authenticate, validateRequest(updateInterviewSchema), asyncHandler(interviewController.updateInterview.bind(interviewController)));
 
 // 📌 Mülakatı soft delete yap
 router.delete('/:id', authenticate, asyncHandler(interviewController.deleteInterview.bind(interviewController)));
 
-// 📌 Mülakatın durumunu güncelle (Publish, Inactivate)
-router.put(
-    '/:id/status', 
-    authenticate, 
-    validateRequest(updateInterviewSchema),
-    asyncHandler(interviewController.updateInterviewStatus.bind(interviewController))
-);
+// // 📌 Mülakatın durumunu güncelle (Publish, Inactivate)
+//router.put(
+   // '/:id/status', 
+   // authenticate, 
+    //validateRequest(updateInterviewSchema),
+    //asyncHandler(interviewController.updateInterviewStatus.bind(interviewController))
+//);
 
 // 📌 Mülakat katılım linki oluşturma (Sadece link güncellendiği için PATCH kullanıldı)
 router.patch('/:id/link', authenticate, asyncHandler(interviewController.generateInterviewLink.bind(interviewController)));

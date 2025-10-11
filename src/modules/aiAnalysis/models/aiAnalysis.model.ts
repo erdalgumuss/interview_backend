@@ -1,5 +1,21 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+
+export interface IAIAnalysisResponse {
+  transcriptionText: string;
+  overallScore?: number;
+  technicalSkillsScore?: number;
+  communicationScore?: number;
+  problemSolvingScore?: number;
+  personalityMatchScore?: number;
+  keywordMatches?: string[];
+  strengths?: string[];
+  improvementAreas?: {
+    area: string;
+    recommendation: string;
+  }[];
+  recommendation?: string;
+}
 /**
  * -----------------------------
  *  IAIAnalysis Interface
@@ -10,7 +26,7 @@ export interface IAIAnalysis extends Document {
   videoResponseId: mongoose.Types.ObjectId; // Video ile bağlantı
   applicationId: mongoose.Types.ObjectId;   // Başvuru ile bağlantı
   questionId: mongoose.Types.ObjectId;      // Hangi soruya ait olduğu
-
+createdAt: Date;
   transcriptionText: string;                // Videodan AI tarafından çıkarılan metin
   overallScore?: number;                    // Genel puan
   technicalSkillsScore?: number;

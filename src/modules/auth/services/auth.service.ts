@@ -3,7 +3,7 @@
 import AuthRepository from '../repositories/auth.repository';
 import { RegisterDTO } from '../dtos/register.dto';
 import { IUser } from '../models/user.model';
-import { AppError } from '../../../middlewares/error/appError';
+import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import { generateEmailVerificationToken } from '../../../utils/tokenUtils';
 import { sendVerificationEmail } from '../../../utils/emailUtils';
@@ -15,6 +15,8 @@ import { generatePasswordResetToken } from '../../../utils/tokenUtils';
 import { sendPasswordResetEmail } from '../../../utils/emailUtils';
 import jwt from 'jsonwebtoken';
 import TokenModel from '../models/token.model';
+import { UpdateProfileDTO } from '../dtos/updateProfile.dto'; // DTO import edildi
+
 
 class AuthService {
     /**
@@ -223,7 +225,16 @@ class AuthService {
 
         return { success: true, message: 'Password reset successful' };
     }
+    public async updateUserProfile(userId: string, data: UpdateProfileDTO): Promise<IUser> {
+        // 1) Repository'yi çağırarak güncellemeyi yap
+        const updatedUser = await AuthRepository.updateUser(userId, data);
+        
+        if (!updatedUser) {
+            throw new AppError('Kullanıcı bulunamadı', ErrorCodes.NOT_FOUND, 404);
+        }
 
+        return updatedUser;
+    }
 }
 
 export default new AuthService();

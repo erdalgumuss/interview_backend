@@ -1,9 +1,9 @@
 import axios from 'axios';
-import VideoResponseModel from '../../video/models/videoResponse.model';
+import VideoResponseModel, { IVideoResponse } from '../../video/models/videoResponse.model'; // IVideoResponse import edildi
 import ApplicationModel from '../../application/models/application.model';
 import InterviewModel from '../../interview/models/interview.model';
-import AIAnalysisModel from '../models/aiAnalysis.model';
-import { AppError } from '../../../middlewares/error/appError';
+import AIAnalysisModel, { IAIAnalysisResponse } from '../models/aiAnalysis.model';
+import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 
 export class AIAnalysisService {
@@ -12,7 +12,7 @@ export class AIAnalysisService {
    */
   public async analyzeSingleVideo(videoResponseId: string) {
     // 1) Video yanıtını bul
-    const video = await VideoResponseModel.findById(videoResponseId);
+const video = (await VideoResponseModel.findById(videoResponseId)) as (IVideoResponse & Document);
     if (!video) {
       throw new AppError('Video response not found', ErrorCodes.NOT_FOUND, 404);
     }
@@ -34,7 +34,7 @@ export class AIAnalysisService {
       throw new AppError('Question not found in interview', ErrorCodes.NOT_FOUND, 404);
     }
 
-    // 4) AI sunucusuna istek at
+    // 4) AI sunucusuna istek at (Payload aynı kalıyor)
     const payload = {
       videoUrl: video.videoUrl,
       applicationId: application._id,
@@ -52,19 +52,22 @@ export class AIAnalysisService {
       },
     };
 
-    const aiServerUrl = process.env.AI_SERVER_URL + '/analyzeVideo'; // Örneğin .env'den gelecek
+    const aiServerUrl = process.env.AI_SERVER_URL + '/analyzeVideo';
 
-    let aiResult;
+    let aiResult: IAIAnalysisResponse; // <-- Tipi burada tanımlıyoruz
+
     try {
-      const { data } = await axios.post(aiServerUrl, payload);
-      aiResult = data;
+      const { data } = await axios.post<IAIAnalysisResponse>(aiServerUrl, payload);
+aiResult = data;
     } catch (err) {
+      // Hata durumunda BullMQ'nun tekrar denemesi için hatayı fırlat
       console.error('AI server error:', err);
-      throw new AppError('AI analysis service unavailable', ErrorCodes.SERVER_ERROR, 503);
+      throw new AppError('AI analysis service unavailable or failed to process', ErrorCodes.SERVER_ERROR, 503);
     }
 
     // 5) AI analizi kaydet
     const savedAnalysis = await AIAnalysisModel.create({
+      // ... (Kayıt mantığı aynı)
       videoResponseId: video._id,
       applicationId: application._id,
       questionId: question._id,
@@ -81,10 +84,10 @@ export class AIAnalysisService {
       analyzedAt: new Date(),
     });
 
-    // 6) Başvuru modelinde yanıtı güncelle
-    await ApplicationModel.updateOne(
+    // 6) Başvuru modelinde yanıtı güncelle (Transkripsiyonu Application'a kaydet)
+   await ApplicationModel.updateOne(
       {
-        _id: application._id,
+        _id: application._id.toString(), // <-- .toString() ekleyerek tip uyuşmazlığını giderdik
         'responses.questionId': video.questionId,
       },
       {
@@ -95,9 +98,26 @@ export class AIAnalysisService {
     );
 
     // 7) Video yanıtını işlenmiş olarak güncelle
-    video.status = 'processed';
-    video.aiAnalysisId = savedAnalysis._id;
-    await video.save();
+   (video as any).aiAnalysisId = savedAnalysis._id; // Geçici çözüm
+video.status = 'processed';
+await video.save();
+
+    // ----------------------------------------------------
+    // YENİ AKIŞ KONTROLÜ (KRİTİK GÜNCELLEME)
+    // ----------------------------------------------------
+
+    // 8) Başvuruya ait tüm videoların analiz durumunu kontrol et
+    const allVideoResponses = await VideoResponseModel.find({ applicationId: application._id });
+
+    // Henüz işlenmemiş video var mı?
+    const pendingVideos = allVideoResponses.filter(v => v.status !== 'processed');
+
+    if (pendingVideos.length === 0) {
+      // Eğer hiç bekleyen video yoksa, genel analizi tetikle.
+      await this.calculateGeneralAIAnalysis(application._id.toString());
+    }
+
+    // ----------------------------------------------------
 
     return savedAnalysis;
   }
@@ -110,7 +130,8 @@ export class AIAnalysisService {
     const analyses = await AIAnalysisModel.find({ applicationId });
 
     if (!analyses.length) {
-      throw new AppError('No AI analyses found for this application', ErrorCodes.NOT_FOUND, 404);
+      // Bu, analizlerin tutarsız olduğu anlamına gelir. Akışı kes.
+      throw new AppError('No AI analyses found for this application to calculate general summary.', ErrorCodes.NOT_FOUND, 404);
     }
 
     // 2) Ortalamaları hesapla
@@ -130,6 +151,7 @@ export class AIAnalysisService {
     };
 
     // 3) Strengths ve Areas for Improvement listelerini birleştir
+    // ... (Mevcut mantık aynı kalıyor)
     const strengthsSet = new Set<string>();
     const improvementAreasList: { area: string; recommendedAction: string }[] = [];
 
@@ -151,7 +173,7 @@ export class AIAnalysisService {
       .filter(r => r)
       .join(' ');
 
-    // 5) Başvuruyu güncelle
+    // 5) Başvuruyu genel analiz ile güncelle VE DURUMU GÜNCELLE (KRİTİK GÜNCELLEME)
     const latestAnalysis = analyses.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
 
     await ApplicationModel.updateOne(
@@ -164,6 +186,8 @@ export class AIAnalysisService {
           recommendation: combinedRecommendations,
         },
         latestAIAnalysisId: latestAnalysis._id,
+        // *** EN KRİTİK GÜNCELLEME: BAŞVURU DURUMUNU analysis_completed OLARAK AYARLA ***
+        status: 'analysis_completed', 
       }
     );
 

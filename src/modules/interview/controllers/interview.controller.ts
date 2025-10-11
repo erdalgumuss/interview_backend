@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { InterviewService } from '../services/interview.service';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
-import { AppError } from '../../../middlewares/error/appError';
+import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import mongoose from 'mongoose';
 import { InterviewStatus } from '../models/interview.model'; // Adjust the path as necessary

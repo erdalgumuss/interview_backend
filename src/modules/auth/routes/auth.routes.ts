@@ -1,7 +1,7 @@
 // src/modules/auth/routes/auth.routes.ts
 
 import { Router } from 'express';
-import { register, verifyEmail, login, logout, refreshAccessToken, requestPasswordReset, resetPassword } from '../controllers/auth.controller';
+import { register, verifyEmail, login, logout, refreshAccessToken, requestPasswordReset, resetPassword, updateProfile} from '../controllers/auth.controller';
 import { authenticate } from '../../../middlewares/auth';
 
 const router = Router();
@@ -21,6 +21,7 @@ router.post('/refresh',  refreshAccessToken);
 
 router.post('/forgot-password', requestPasswordReset);
 router.post('/reset-password', resetPassword);
+router.put('/profile', authenticate, updateProfile);
 
 
 export default router;

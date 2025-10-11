@@ -1,11 +1,14 @@
 import UserModel, { IUser } from '../models/user.model';
 import { RegisterDTO } from '../dtos/register.dto';
+import { UpdateProfileDTO } from '../dtos/updateProfile.dto'; // DTO import edildi
+
+type CreateUserInput = RegisterDTO & Partial<IUser>; 
 
 class AuthRepository {
     /**
      * Kullanıcı kaydı oluşturma
      */
-    async createUser(data: RegisterDTO): Promise<IUser> {
+    async createUser(data: CreateUserInput): Promise<IUser> {
         const newUser = new UserModel(data);
         return newUser.save();
     }
@@ -50,6 +53,20 @@ class AuthRepository {
     }
     async flagSuspiciousActivity(userId: string, ip: string) {
         return await UserModel.updateOne({ _id: userId }, { isActive: false, $push: { lastKnownIPs: ip } });
+    }
+    /**
+     * Kullanıcı profil bilgilerini günceller.
+     */
+    async updateUser(userId: string, data: UpdateProfileDTO): Promise<IUser | null> {
+        // $set operatörü sadece var olan alanları günceller
+        // DTO'da optional olarak gelen alanlar hariç (undefined olanlar) diğerleri güncellenir.
+        const updatedUser = await UserModel.findByIdAndUpdate(
+            userId,
+            { $set: data },
+            { new: true } // Yeni güncellenmiş belgeyi döndür
+        ).select('-password'); // Şifreyi yanıt dışında tut
+
+        return updatedUser;
     }
 }
 

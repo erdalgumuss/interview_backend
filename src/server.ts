@@ -1,15 +1,25 @@
-import dotenv from 'dotenv';
+const dotenv = require('dotenv');
 dotenv.config();
 
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import connectDB from './config/db';
-import rootRouter from './routes/index';
-import cookieParser from 'cookie-parser';
-//import { interviewStatusJob } from './jobs/interviewStatus.job';
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+// KRİTİK DEĞİŞİKLİK: Local import'lar için require() kullanılıyor
+const connectDB = require('./config/db');
+const rootRouter = require('./routes/index');
+const cookieParser = require('cookie-parser');
 
+// ----------------------------------------------------
+// 🚀 KRİTİK GÜNCELLEME: Mongoose Modellerini Yükleme
+// Side-effect (yan etki) importlar için require() kullanıldı.
+// ----------------------------------------------------
+require('./modules/auth/models/user.model');         // User Model
+require('./modules/application/models/application.model'); // Application Model
+require('./modules/interview/models/interview.model'); // Interview Model
+require('./modules/aiAnalysis/models/aiAnalysis.model'); // AI Analysis Model
+require('./modules/video/models/videoResponse.model'); // Video Response Model
+// ----------------------------------------------------
 
 // Uygulama
 const app = express();
@@ -37,5 +47,3 @@ rootRouter(app);
 // Port
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-

@@ -2,12 +2,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { CandidateService } from '../services/candidate.service';
 import { getPublicInterviewSchema } from '../dtos/publicInterview.dto';
-import { AppError } from '../../../middlewares/error/appError';
+import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import { CreateApplicationDTO, createApplicationSchema } from '../dtos/createApplication.dto';
 import { VerifyOtpDTO, verifyOtpSchema } from '../dtos/otpVerify.dto';
 import { updateCandidateSchema } from '../dtos/updateCandidate.dto';
 import { resendOtpSchema } from '../dtos/otpVerify.dto';  // ✅ Yeni ekleme
+import { videoResponseSchema, VideoResponseDTO } from '../dtos/videoResponse.dto'; // ✅ Video DTO eklendi
+import { personalityTestSchema, PersonalityTestResponseDTO } from '../dtos/personalityTest.dto'; // ✅ Test DTO eklendi
 
 class CandidateController {
   private candidateService: CandidateService;
@@ -15,12 +17,15 @@ class CandidateController {
   constructor() {
       this.candidateService = new CandidateService();
   
-      // `this` bağlamını kaybetmemek için bind ediyoruz
+      // ... mevcut bind işlemleri ...
       this.getPublicInterview = this.getPublicInterview.bind(this);
       this.createApplication = this.createApplication.bind(this);
       this.verifyOtp = this.verifyOtp.bind(this);
       this.updateCandidateDetails = this.updateCandidateDetails.bind(this);
+      this.submitVideoResponse = this.submitVideoResponse.bind(this); // ✅ Yeni metot
+      this.submitPersonalityTestResponse = this.submitPersonalityTestResponse.bind(this); // ✅ Yeni metot
      }
+
 
   public getPublicInterview = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -148,6 +153,71 @@ public async resendOtp(req: Request, res: Response, next: NextFunction) {
       next(err);
     }
   }
+  /**
+     * ✅ YENİ METOT: Aday Video Yanıtını Kaydetme (Video URL'i)
+     * POST /api/v1/candidates/video/response
+     * @requires authenticateCandidate Middleware
+     */
+    public submitVideoResponse = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // 1) Validasyon
+            const validatedData = await videoResponseSchema.validateAsync(req.body);
+
+            // Aday token'dan (authenticateCandidate) gelen application ID'si
+            const applicationId = req.user?.id; 
+
+            if (!applicationId) {
+                throw new AppError('Başvuru ID bulunamadı.', ErrorCodes.UNAUTHORIZED, 401);
+            }
+
+            // 2) Service çağır
+            const updatedApplication = await this.candidateService.saveVideoResponse(
+                validatedData as VideoResponseDTO,
+                applicationId
+            );
+
+            res.status(200).json({
+                success: true,
+                message: 'Video yanıtı başarıyla kaydedildi.',
+                data: updatedApplication,
+            });
+        } catch (err) {
+            next(err);
+        }
+    };
+
+    /**
+     * ✅ YENİ METOT: Aday Kişilik Testi Yanıtlarını Kaydetme
+     * POST /api/v1/candidates/personality-test/response
+     * @requires authenticateCandidate Middleware
+     */
+    public submitPersonalityTestResponse = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // 1) Validasyon
+            const validatedData = await personalityTestSchema.validateAsync(req.body);
+
+            // Aday token'dan (authenticateCandidate) gelen application ID'si
+            const applicationId = req.user?.id;
+
+            if (!applicationId) {
+                throw new AppError('Başvuru ID bulunamadı.', ErrorCodes.UNAUTHORIZED, 401);
+            }
+
+            // 2) Service çağır
+            const updatedApplication = await this.candidateService.savePersonalityTestResponse(
+                validatedData as PersonalityTestResponseDTO,
+                applicationId
+            );
+
+            res.status(200).json({
+                success: true,
+                message: 'Kişilik testi yanıtları başarıyla kaydedildi.',
+                data: updatedApplication,
+            });
+        } catch (err) {
+            next(err);
+        }
+    };
 }
 const candidateController = new CandidateController();
 export default candidateController;

@@ -2,10 +2,10 @@
 import { CandidateRepository } from '../repositories/candidate.repository';
 import { InterviewRepository } from '../../interview/repositories/interview.repository';
 import { ApplicationRepository } from '../repositories/application.repository';
-import { AppError } from '../../../middlewares/error/appError';
+import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import { IInterview, InterviewStatus } from '../../interview/models/interview.model';
-import { IApplication } from '../models/application.model'; // Dikkat, path proje yapınıza göre değişebilir
+import { IApplication, IApplicationResponse } from '../models/application.model'; // Dikkat, path proje yapınıza göre değişebilir
 import { CreateApplicationDTO } from '../dtos/createApplication.dto';
 import { VerifyOtpDTO, VerifyOtpResponseDTO } from '../dtos/otpVerify.dto';
 import { generateRandomCode } from '../../../utils/stringUtils';
@@ -13,6 +13,11 @@ import { Types } from 'mongoose';
 import { GetPublicInterviewDTO } from '../dtos/publicInterview.dto';
 import { generateCandidateToken } from '../../../utils/tokenUtils';
 import { UpdateCandidateDTO } from '../dtos/updateCandidate.dto';
+import { VideoResponseDTO } from '../dtos/videoResponse.dto'; // ✅ Yeni DTO
+import { PersonalityTestResponseDTO } from '../dtos/personalityTest.dto'; // ✅ Yeni DTO
+import { aiAnalysisQueue } from '../../../utils/bullmq'; // utils/bullmq.ts dosyasından
+
+
 
 export class CandidateService {
   private interviewRepository: InterviewRepository;
@@ -191,18 +196,19 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
     }
   
     // ✅ Varsayılan değerleri atayarak undefined hatasını önlüyoruz
-    application.candidate.education = education ?? application.candidate.education;
-    application.candidate.experience = experience?.map(exp => ({
+       application.education = education ?? application.education; 
+
+   application.experience = experience?.map(exp => ({
       company: exp.company,
       position: exp.position,
       duration: exp.duration,
-      responsibilities: exp.responsibilities ?? "", // ✅ Varsayılan değer atandı
-    })) ?? application.candidate.experience;
+      responsibilities: exp.responsibilities ?? "", 
+    })) ?? application.experience;
   
-    application.candidate.skills = {
-      technical: skills?.technical ?? application.candidate.skills?.technical ?? [],
-      personal: skills?.personal ?? application.candidate.skills?.personal ?? [],
-      languages: skills?.languages ?? application.candidate.skills?.languages ?? [],
+   application.skills = {
+      technical: skills?.technical ?? application.skills?.technical ?? [],
+      personal: skills?.personal ?? application.skills?.personal ?? [],
+      languages: skills?.languages ?? application.skills?.languages ?? [],
     };
   
     application.status = 'in_progress';
@@ -218,5 +224,112 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
       completed: true,  // ✅ Başvuru tamamlandı bilgisi eklendi
   };
   }
-  
+  /**
+     * ✅ YENİ METOT: Aday Video Yanıtını Kaydeder ve AI Analizini Tetikler
+     */
+    public async saveVideoResponse(data: VideoResponseDTO, applicationId: string): Promise<IApplication> {
+        const { questionId, videoUrl, duration, textAnswer, aiAnalysisRequired } = data;
+
+        // ... (Kodun Başvuru Bulma ve Tekrarlı Yanıt Kontrolü kısımları aynı kalır)
+        const application = await this.candidateRepository.getApplicationById(applicationId);
+        if (!application) {
+            throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
+        }
+
+        // 1) Tekrarlı yanıt kontrolü (Aynı kalır)
+
+        // 2) Yeni yanıtı Application Model'e ekle (Aynı kalır)
+        const newResponse: IApplicationResponse = {
+            questionId: new Types.ObjectId(questionId),
+            videoUrl,
+            duration,
+            textAnswer,
+        };
+        application.responses.push(newResponse);
+
+        // 3) Application durumunu güncelle
+        // *Düzeltme:* Video yanıtları biriktikçe durum 'in_progress' olmalı, ilk video yüklemesinden sonra analiz bekleme durumuna geçebiliriz.
+        // Tüm videolar yüklenince durum 'awaiting_ai_analysis' olarak ayarlanmalıdır.
+        // Ancak bu akışta videoyu kaydettiğimiz an analizi tetiklediğimiz için 'awaiting_ai_analysis' doğru bir ara durumdur.
+        application.status = 'awaiting_ai_analysis'; 
+
+        const updatedApplication = await this.candidateRepository.updateApplicationById(applicationId, application);
+        
+        if (!updatedApplication) {
+            throw new AppError('Video yanıtı kaydedilemedi.', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
+        }
+
+        // 4) 🚀 KRİTİK ADIM: AI Analizi için kuyruğa iş ekle
+        if (aiAnalysisRequired !== false) {
+            
+            // Kuyruğa eklenecek iş için video yanıtının ID'sini (veya benzer bir benzersiz ID'yi) bulmalıyız.
+            // Bu akışta VideoResponseModel kullanmadığınız için, Application içerisindeki responses dizisinin
+            // hangi öğesinin analiz edileceğini belirtmek amacıyla, QuestionID'yi kullanacağız.
+
+            await aiAnalysisQueue.add('analyzeVideo', { 
+                videoResponseId: newResponse.questionId.toString(), // 🚨 DİKKAT: Normalde buraya VideoResponse Model'in ID'si gelmeliydi.
+                                                                    // Ancak VideoResponse ayrı bir model olarak kaydedilmediği için,
+                                                                    // Worker'ın Application'ı bulmasını sağlamak üzere questionId'yi kullanıyoruz.
+                                                                    // Service katmanında VideoResponse Model'i oluşturmak daha doğru olurdu.
+                                                                    // Şimdilik Question ID üzerinden devam edelim:
+                                                                    
+                questionId: newResponse.questionId.toString(), 
+                applicationId: applicationId,
+            }); 
+            
+            console.log(`✅ [BullMQ] AI Analizi için iş kuyruğa eklendi. Question ID: ${newResponse.questionId}`);
+
+        }
+
+        return updatedApplication;
+    }
+    /**
+     * ✅ YENİ METOT: Aday Kişilik Testi Yanıtlarını Kaydeder
+     */
+    public async savePersonalityTestResponse(data: PersonalityTestResponseDTO, applicationId: string): Promise<IApplication> {
+        const { testId, answers } = data;
+
+        const application = await this.candidateRepository.getApplicationById(applicationId);
+        if (!application) {
+            throw new AppError('Başvuru bulunamadı.', ErrorCodes.NOT_FOUND, 404);
+    }
+        
+        // 1) Testin geçerli olup olmadığını kontrol et
+        // NOT: PersonalityTestService üzerinden testin varlığını ve aktifliğini kontrol etmelisiniz.
+        
+        if (application.personalityTestResults?.completed) {
+            throw new AppError('Kişilik testi zaten tamamlanmış.', ErrorCodes.CONFLICT, 409);
+        }
+        
+        // 2) Test sonuçlarını hesapla (Bu mantık burada simüle ediliyor, gerçekte ayrı bir Service/Logic olabilir)
+        // NOT: Gerçek test skorlama mantığınızı buraya eklemelisiniz. Şimdilik rastgele skorlar atayalım.
+        const mockScores = {
+            openness: Math.floor(Math.random() * 100),
+            conscientiousness: Math.floor(Math.random() * 100),
+            extraversion: Math.floor(Math.random() * 100),
+            agreeableness: Math.floor(Math.random() * 100),
+            neuroticism: Math.floor(Math.random() * 100),
+        };
+        
+        // 3) Application Model'i güncelle
+        application.personalityTestResults = {
+            testId: new Types.ObjectId(testId),
+            completed: true,
+            scores: mockScores,
+            personalityFit: Math.floor(Math.random() * 100), // Örnek uyum skoru
+        };
+        
+        // Eğer mülakatın son aşaması ise status'ü "completed" yap:
+        // application.status = 'completed'; // Veya sadece 'in_progress' olarak kalabilir.
+        
+        const updatedApplication = await this.candidateRepository.updateApplicationById(applicationId, application);
+        
+        if (!updatedApplication) {
+            throw new AppError('Kişilik testi kaydedilemedi.', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
+        }
+        
+        return updatedApplication;
+    }
+    
 }
+

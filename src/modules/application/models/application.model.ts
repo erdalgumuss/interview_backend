@@ -2,6 +2,23 @@
 
 import mongoose, { Schema, Document } from 'mongoose';
 
+
+export type ApplicationStatus = 
+    'pending' | 
+    'awaiting_video_responses' | 
+    'in_progress' | 
+    'awaiting_ai_analysis' | 
+    'completed' | 
+    'rejected' | 
+    'accepted';
+
+export interface IApplicationResponse { 
+  questionId: mongoose.Types.ObjectId;
+  videoUrl?: string; // S3/Cloudfront linki
+  textAnswer?: string; // Transkripsiyon veya metin yanıtı
+  duration?: number; // Video süresi
+}
+
 export interface ICandidateProfile {
   name: string;
   surname: string;
@@ -71,13 +88,15 @@ export interface IGeneralAIAnalysis {
 }
 
 export interface IApplication extends Document {
+  _id: mongoose.Types.ObjectId;
+  id: string;
   interviewId: mongoose.Types.ObjectId;
   candidate: ICandidateProfile;
   education: ICandidateEducation[];
   experience: ICandidateExperience[];
   skills: ICandidateSkills;
   documents: ICandidateDocuments;
-  status: 'pending' | 'awaiting_video_responses' | 'in_progress' | 'awaiting_ai_analysis' | 'completed' | 'rejected' | 'accepted';
+    status: ApplicationStatus; 
   personalityTestResults?: IPersonalityTestResults;
   aiAnalysisResults: mongoose.Types.ObjectId[];
   latestAIAnalysisId?: mongoose.Types.ObjectId;
@@ -88,6 +107,9 @@ export interface IApplication extends Document {
   supportRequests: ISupportRequest[];
   createdAt: Date;
   updatedAt: Date;
+  responses: IApplicationResponse[]; 
+
+  
 }
 
 const ApplicationSchema = new Schema<IApplication>(
@@ -136,6 +158,7 @@ const ApplicationSchema = new Schema<IApplication>(
 
     status: {
       type: String,
+      // 3. Status enum'unu doğrudan listelemek yerine, tanımladığınız tipleri kullanabilirsiniz
       enum: [
         'pending',
         'awaiting_video_responses',
@@ -188,6 +211,14 @@ const ApplicationSchema = new Schema<IApplication>(
       {
         timestamp: { type: Date, required: true },
         message: { type: String, required: true },
+      },
+    ],
+    responses: [
+      {
+        questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },
+        videoUrl: { type: String }, 
+        textAnswer: { type: String },
+        duration: { type: Number },
       },
     ],
   },
