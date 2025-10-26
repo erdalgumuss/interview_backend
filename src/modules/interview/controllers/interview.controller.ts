@@ -3,8 +3,7 @@ import { InterviewService } from '../services/interview.service';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-import mongoose from 'mongoose';
-import { InterviewStatus } from '../models/interview.model'; // Adjust the path as necessary
+import { InterviewStatus } from '../models/interview.model'; 
 
 class InterviewController {
     private interviewService: InterviewService;
@@ -13,30 +12,35 @@ class InterviewController {
         this.interviewService = new InterviewService();
     }
 
+    /**
+     * POST /interviews - Yeni mülakat oluşturma.
+     */
     public async createInterview(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            console.log('📥 Gelen Body:', req.body);
-
             const body = req.body as CreateInterviewDTO;
             const userId = req.user?.id as string;
 
             if (!userId) {
+                // Bu durum, genellikle auth middleware tarafından zaten yakalanmalıdır, ancak ek kontrol.
                 return next(new AppError('User authentication failed', ErrorCodes.UNAUTHORIZED, 401));
             }
 
             const newInterview = await this.interviewService.createInterview(body, userId);
             res.status(201).json({ success: true, data: newInterview });
         } catch (error) {
+            // Servis'ten fırlatılan iş mantığı hataları (örneğin: 'Interview must contain at least one question') burada yakalanır.
+            // Bu hataların doğru HTTP kodlarına (400 Bad Request) dönüştürülmesi gerekiyor (Bkz: Sonraki Adım).
             next(error);
         }
     };
+    
     /**
-     * Tüm mülakatları getir (Sadece Admin)
+     * GET /interviews/admin - Tüm mülakatları getir (Sadece Admin).
      */
     public getAllInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
             if (req.user?.role !== 'admin') {
-                return next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 403));
+                return next(new AppError('Forbidden: Admin access required', ErrorCodes.UNAUTHORIZED, 403));
             }
 
             const interviews = await this.interviewService.getAllInterviews();
@@ -47,7 +51,7 @@ class InterviewController {
     };
 
     /**
-     * Kullanıcının mülakatlarını getir.
+     * GET /interviews/my - Kullanıcının oluşturduğu mülakatları getir.
      */
     public getUserInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -64,15 +68,24 @@ class InterviewController {
     };
 
     /**
-     * Tek bir mülakatı getir.
+     * GET /interviews/:id - Tek bir mülakatı getir (Gizlilik Kontrollü).
      */
     public getInterviewById = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { id } = req.params;
+            const userId = req.user?.id;
+
             const interview = await this.interviewService.getInterviewById(id);
 
             if (!interview) {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            }
+
+            // Gizlilik Kontrolü: Yalnızca sahibi DRAFT mülakatı görebilir.
+            // PUBLISHED olanlar, aday rotasından erişilebilir (farklı bir controller/rota olmalı).
+            if (interview.status === InterviewStatus.DRAFT && interview.createdBy.userId.toString() !== userId) {
+                 // 404 döndürerek mülakatın varlığını gizliyoruz.
+                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
 
             res.json({ success: true, data: interview });
@@ -80,6 +93,11 @@ class InterviewController {
             next(error);
         }
     };
+    
+    /**
+     * PUT /interviews/:id - Mülakat güncelleme (Başlık, Süre, vb.)
+     * Bu metot artık Soru ve Kişilik Testi güncellemelerini de kapsar.
+     */
     public async updateInterview(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
@@ -95,11 +113,12 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Kullanıcı yalnızca kendi mülakatlarını güncelleyebilir
+            // Sahiplik Kontrolü
             if (existingInterview.createdBy.userId.toString() !== userId) {
                 throw new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403);
             }
-    
+            
+            // Güncelleme işlemi Servis katmanında yapılır
             const updatedInterview = await this.interviewService.updateInterview(id, updateData);
     
             res.json({ success: true, data: updatedInterview });
@@ -108,6 +127,9 @@ class InterviewController {
         }
     }
     
+    /**
+     * DELETE /interviews/:id - Mülakatı soft-delete veya hard-delete yap.
+     */
     public async deleteInterview(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
@@ -122,12 +144,12 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Kullanıcı yalnızca kendi mülakatlarını silebilir
+            // Sahiplik Kontrolü
             if (interview.createdBy.userId.toString() !== userId) {
                 throw new AppError('Forbidden: Cannot delete other user interviews', ErrorCodes.UNAUTHORIZED, 403);
             }
     
-            await this.interviewService.deleteInterview(id);
+            await this.interviewService.deleteInterview(id); // Veya softDeleteInterview(id, userId);
     
             res.json({ success: true, message: 'Interview deleted successfully' });
         } catch (error) {
@@ -135,56 +157,68 @@ class InterviewController {
         }
     }
 
-    public async updateInterviewStatus(req: Request, res: Response, next: NextFunction) {
+    /**
+     * POST /interviews/:id/publish - Mülakatı yayınlama (DRAFT -> PUBLISHED).
+     */
+    public async publishInterview(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
-            const { newStatus } = req.body;
             const userId = req.user?.id;
 
             if (!userId) {
-                return next(new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401));
+                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
             }
 
+            // Mülakatı çekme ve Sahiplik Kontrolü
             const interview = await this.interviewService.getInterviewById(id);
             if (!interview) {
-                return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
+                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
-
             if (interview.createdBy.userId.toString() !== userId) {
-                return next(new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403));
+                throw new AppError('Forbidden: Cannot publish other user interviews', ErrorCodes.UNAUTHORIZED, 403);
             }
 
-            if (interview.status === InterviewStatus.DRAFT && newStatus === InterviewStatus.PUBLISHED) {
-                interview.status = InterviewStatus.PUBLISHED;
-            } else if (interview.status === InterviewStatus.PUBLISHED && newStatus === InterviewStatus.INACTIVE) {
-                interview.status = InterviewStatus.INACTIVE;
-            } else {
-                return next(new AppError('Invalid status transition', ErrorCodes.BAD_REQUEST, 400));
-            }
+            // Servis'e iş mantığını devret
+            const updatedInterview = await this.interviewService.publishInterview(id);
 
-            const updatedInterview = await this.interviewService.updateInterview(id, { status: interview.status });
             res.json({ success: true, data: updatedInterview });
-
         } catch (error) {
-            next(error);
+            // Servis'ten gelen iş mantığı hataları (400 Bad Request) burada yakalanır
+            next(error); 
         }
     }
 
+    /**
+     * POST /interviews/:id/link - Mülakat linkini yeniden oluşturma/güncelleme.
+     * Link oluşturma mantığı Servis'te olmalıdır. Burada sadece veriyi güncelleyen genel update kullanıldı.
+     */
     public async generateInterviewLink(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
             const { expirationDate } = req.body;
+            const userId = req.user?.id;
 
+            if (!userId) {
+                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+            }
+            
             const interview = await this.interviewService.getInterviewById(id);
             if (!interview) {
                 return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
             }
+            
+            // Sahiplik Kontrolü
+            if (interview.createdBy.userId.toString() !== userId) {
+                throw new AppError('Forbidden: Cannot update link for other user interviews', ErrorCodes.UNAUTHORIZED, 403);
+            }
 
+            // Link oluşturma mantığı burada (Controller) olduğu için bir risk taşır.
+            // Bu mantık Servis'e taşınmalıdır.
             const link = `https://localhost:3001/application/${id}`;
-            const updatedInterview = await this.interviewService.updateInterview(interview.id, {
+            const updatedInterview = await this.interviewService.updateInterview(id, {
                 interviewLink: {
                     link,
-                    expirationDate: expirationDate ? new Date(expirationDate) : undefined,
+                    expirationDate: expirationDate ? new Date(expirationDate) : interview.interviewLink.expirationDate, // Süre verilmezse eskisini koru
                 }
             });
 
@@ -196,46 +230,6 @@ class InterviewController {
             next(error);
         }
     }
-
-
-    public async updateInterviewQuestions(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { id } = req.params;
-            const { questions } = req.body; // Yeni soru listesi
-    
-            const interview = await this.interviewService.getInterviewById(id);
-            if (!interview) {
-                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
-            }
-    
-            interview.questions = questions;
-            await interview.save();
-    
-            res.json({ success: true, data: interview.questions });
-        } catch (error) {
-            next(error);
-        }
-    }
-    public async updatePersonalityTest(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { id } = req.params;
-            const { personalityTestId } = req.body;
-    
-            const interview = await this.interviewService.getInterviewById(id);
-            if (!interview) {
-                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
-            }
-    
-            interview.personalityTestId = personalityTestId ? new mongoose.Types.ObjectId(personalityTestId) : undefined;
-            await interview.save();
-    
-            res.json({ success: true, data: interview });
-        } catch (error) {
-            next(error);
-        }
-    }
-    
-    
 }
 
 export default new InterviewController();

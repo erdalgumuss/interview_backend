@@ -4,6 +4,8 @@ import { InterviewRepository } from '../repositories/interview.repository';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 import { IInterview, InterviewStatus } from '../models/interview.model';
 import mongoose from 'mongoose';
+import { AppError } from '../../../middlewares/errors/appError'; // AppError import edildi
+import { ErrorCodes } from '../../../constants/errors'; // ErrorCodes import edildi
 
 export class InterviewService {
     private interviewRepository: InterviewRepository;
@@ -14,18 +16,28 @@ export class InterviewService {
 
     /**
      * Mülakat oluşturma iş mantığı.
-     * Kullanıcı bilgileri genelde oturumdan veya JWT'den gelir.
      */
     public async createInterview(
         data: CreateInterviewDTO,
         userId: string
     ): Promise<IInterview> {
-        console.log('📥 Gelen Questions:', data.questions); // Debug için log
+        // 🚨 İş Kuralı 1: Soru Seti Zorunlu Kontrolü
+        if (!data.questions || data.questions.length === 0) {
+            throw new AppError(
+                'Interview must contain at least one question.', 
+                ErrorCodes.BAD_REQUEST, 
+                400
+            );
+        }
 
         // 📌 Expiration Date formatı dönüşümü
         const parsedExpirationDate = new Date(data.expirationDate);
         if (isNaN(parsedExpirationDate.getTime())) {
-            throw new Error('Invalid expiration date format');
+            throw new AppError(
+                'Invalid expiration date format', 
+                ErrorCodes.BAD_REQUEST, 
+                400
+            );
         }
 
         // 📌 Interview Link oluşturulması
@@ -44,12 +56,12 @@ export class InterviewService {
             personalityTestId: data.personalityTestId
                 ? new mongoose.Types.ObjectId(data.personalityTestId)
                 : undefined,
-            questions: data.questions ?? [], // 📌 Questions alanı eklendi
+            questions: data.questions,
             interviewLink: {
                 link: interviewLink,
                 expirationDate: parsedExpirationDate,
             },
-            status: InterviewStatus.DRAFT // ✅ Enum kullanıldı
+            status: InterviewStatus.DRAFT 
         };
 
         return this.interviewRepository.createInterview(interviewData);
@@ -77,12 +89,41 @@ export class InterviewService {
     }
 
     /**
-     * Mülakat güncelleme.
+     * Mülakat güncelleme. (Soru ve Kişilik Testi güncellemeleri de dahil)
      */
     public async updateInterview(
         interviewId: string,
         updateData: Partial<IInterview>
     ): Promise<IInterview | null> {
+        const interview = await this.interviewRepository.getInterviewById(interviewId);
+        
+        if (!interview) {
+            throw new AppError('Interview not found.', ErrorCodes.NOT_FOUND, 404);
+        }
+
+        // 🚨 İş Kuralı 2: Yayınlanmış Mülakat Koruması
+        if (interview.status === InterviewStatus.PUBLISHED) {
+            const forbiddenFields = ['questions', 'title', 'personalityTestId'];
+            const attemptedUpdates = Object.keys(updateData);
+            
+            if (attemptedUpdates.some(field => forbiddenFields.includes(field) && field !== 'status')) {
+                 throw new AppError(
+                     'Cannot modify core fields (questions, title, test) of a PUBLISHED interview. Change its status first.', 
+                     ErrorCodes.BAD_REQUEST, 
+                     400
+                 );
+            }
+        }
+        
+        // Eğer sorular güncelleniyorsa, boş olup olmadığını kontrol et
+        if (updateData.questions && updateData.questions.length === 0) {
+             throw new AppError(
+                 'Interview must contain at least one question.', 
+                 ErrorCodes.BAD_REQUEST, 
+                 400
+             );
+        }
+
         return this.interviewRepository.updateInterviewById(interviewId, updateData);
     }
 
@@ -90,20 +131,53 @@ export class InterviewService {
      * Mülakatı yayına al.
      */
     public async publishInterview(interviewId: string): Promise<IInterview | null> {
+        const interview = await this.interviewRepository.getInterviewById(interviewId);
+
+        if (!interview) {
+            throw new AppError('Interview not found.', ErrorCodes.NOT_FOUND, 404);
+        }
+
+        // 🚨 İş Kuralı 3: Yayınlama Öncesi Kontroller
+        if (interview.status !== InterviewStatus.DRAFT) {
+            throw new AppError(
+                `Cannot publish an interview with status: ${interview.status}`, 
+                ErrorCodes.CONFLICT, 
+                409 // CONFLICT kullanmak daha uygun
+            ); 
+        }
+        
+        if (!interview.questions || interview.questions.length === 0) {
+             throw new AppError(
+                 'Interview must have questions before publishing.', 
+                 ErrorCodes.BAD_REQUEST, 
+                 400
+             );
+        }
+
+        if (interview.expirationDate && new Date() > interview.expirationDate) {
+             throw new AppError(
+                 'Cannot publish an interview that has already expired.', 
+                 ErrorCodes.FORBIDDEN, 
+                 403 // Süresi dolmuş bir şeyi yayınlamak yasaklanmıştır
+             );
+        }
+        
         return this.interviewRepository.updateInterviewById(interviewId, {
-            status: InterviewStatus.PUBLISHED // ✅ Enum kullanıldı
+            status: InterviewStatus.PUBLISHED
         });
     }
 
     /**
-     * Mülakatı soft-delete yap.
+     * Mülakatı soft-delete yap. (Controller'dan sahiplik kontrolü gelecektir)
      */
-    public async softDeleteInterview(interviewId: string): Promise<void> {
+   public async softDeleteInterview(interviewId: string): Promise<void> {
+        // Kontrolsüz silme işlemi
         await this.interviewRepository.softDeleteInterviewById(interviewId);
     }
 
+
     /**
-     * Mülakatı tamamen sil.
+     * Mülakatı tamamen sil. (Controller'dan sahiplik kontrolü gelecektir)
      */
     public async deleteInterview(interviewId: string): Promise<void> {
         await this.interviewRepository.deleteInterviewById(interviewId);

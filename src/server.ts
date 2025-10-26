@@ -7,8 +7,10 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 // KRİTİK DEĞİŞİKLİK: Local import'lar için require() kullanılıyor
 const connectDB = require('./config/db');
-const rootRouter = require('./routes/index');
+const routerModule = require('./routes/index');
+const rootRouter = routerModule.default || routerModule; // Hem default hem de doğrudan export'u destekle
 const cookieParser = require('cookie-parser');
+import { errorMiddleware } from './middlewares/errorMiddleware'; 
 
 // ----------------------------------------------------
 // 🚀 KRİTİK GÜNCELLEME: Mongoose Modellerini Yükleme
@@ -43,6 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 connectDB();
 // Rotalar (dinamik olarak yüklenir)
 rootRouter(app);
+app.use(errorMiddleware); 
 
 // Port
 const PORT = process.env.PORT || 5000;

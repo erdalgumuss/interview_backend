@@ -95,7 +95,7 @@ const InterviewSchema = new Schema<IInterview>(
         status: {
             type: String,
             enum: Object.values(InterviewStatus),
-            default: InterviewStatus.ACTIVE,
+            default: InterviewStatus.DRAFT,
         },
         personalityTestId: {
             type: mongoose.Schema.Types.ObjectId,

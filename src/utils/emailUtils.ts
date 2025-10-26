@@ -11,7 +11,7 @@ const transporter = nodemailer.createTransport({
     secure: process.env.EMAIL_SECURE === 'true', // true ise TLS kullanır
     auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        pass: process.env.EMAIL_PASSWORD,
     },
 });
 
@@ -19,7 +19,7 @@ const transporter = nodemailer.createTransport({
  * E-posta gönderme fonksiyonu
  */
 export async function sendVerificationEmail(email: string, token: string) {
-    const verificationLink = `${process.env.APP_URL}/verify-email?token=${token}`;
+    const verificationLink = `${process.env.APP_URL}/api/auth/verify-email?token=${token}`;
   
     const mailOptions = {
       from: process.env.EMAIL_USER,
