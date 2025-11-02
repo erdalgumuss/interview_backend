@@ -33,7 +33,7 @@ export function verifyEmailVerificationToken(token: string): { userId: string } 
 export function generateAccessToken(userId: string, role: string): string {
 
   return jwt.sign({ userId, role }, NEXT_PUBLIC_JWT_SECRET, { 
-      expiresIn: '10s', // ✅ Geçerlilik süresi
+      expiresIn: '15m', // ✅ Geçerlilik süresi
       algorithm: "HS256"  // ✅ Algoritma belirtiyoruz
       
   });

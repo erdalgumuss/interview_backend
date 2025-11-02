@@ -10,7 +10,8 @@
     "forceConsistentCasingInFileNames": true,          /* Büyük/küçük harf tutarlılığı */
     "strict": true,                                    /* Tüm katı tip denetimlerini etkinleştir */
     "skipLibCheck": true,                              /* Tip tanımlama dosyalarını kontrol etmeyi atla (Daha hızlı derleme) */
-    
+    "emitDecoratorMetadata": true, 
+    "experimentalDecorators": true,
     /* Gelişmiş Seçenekler */
     "sourceMap": true,                                 /* Hata ayıklama için kaynak haritaları oluştur */
     "resolveJsonModule": true,                         /* JSON modüllerini içe aktarmaya izin ver */

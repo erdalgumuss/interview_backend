@@ -1,6 +1,7 @@
 import UserModel, { IUser } from '../models/user.model';
 import { RegisterDTO } from '../dtos/register.dto';
-import { UpdateProfileDTO } from '../dtos/updateProfile.dto'; // DTO import edildi
+import { UpdateProfileDTO } from '../dtos/updateProfile.dto';
+import { QueryOptions } from 'mongoose'; // Mongoose QueryOptions tipini varsayıyoruz
 
 type CreateUserInput = RegisterDTO & Partial<IUser>; 
 
@@ -21,10 +22,12 @@ class AuthRepository {
     }
 
     /**
-     * Kullanıcıyı ID ile bulma
+     * Kullanıcıyı ID ile bulma (Ekstra Sorgu Seçeneklerini Kabul Eder)
      */
-    async findById(userId: string): Promise<IUser | null> {
-        return UserModel.findById(userId);
+    async findById(userId: string, options?: QueryOptions): Promise<IUser | null> {
+        // options (seçenekler) argümanını findById'nin ikinci parametresi olarak geçiriyoruz.
+        // Bu, Service katmanından hassas alanları hariç tutma (select: '-password') gibi istekleri karşılar.
+        return UserModel.findById(userId, undefined, options); 
     }
 
     /**
@@ -58,8 +61,6 @@ class AuthRepository {
      * Kullanıcı profil bilgilerini günceller.
      */
     async updateUser(userId: string, data: UpdateProfileDTO): Promise<IUser | null> {
-        // $set operatörü sadece var olan alanları günceller
-        // DTO'da optional olarak gelen alanlar hariç (undefined olanlar) diğerleri güncellenir.
         const updatedUser = await UserModel.findByIdAndUpdate(
             userId,
             { $set: data },

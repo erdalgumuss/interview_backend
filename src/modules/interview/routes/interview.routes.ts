@@ -45,9 +45,5 @@ router.get('/dashboard', authenticate, asyncHandler(interviewController.getUserI
 router.get('/:id', authenticate, asyncHandler(interviewController.getInterviewById.bind(interviewController)));
 
 
-// 🚨 Kaldırılan rotalar:
-// router.patch('/:id/questions', ...);
-// router.patch('/:id/personality-test', ...);
-// router.put('/:id/status', ...);
 
 export default router;

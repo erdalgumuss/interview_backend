@@ -275,3 +275,43 @@ export const updateProfile: RequestHandler = async (req, res, next) => {
         next(err); // error middleware'e gönder
     }
 };
+
+/**
+ * Oturum Açmış Kullanıcı Bilgilerini Getirme (GET /api/profile/me)
+ * @requires authenticate Middleware (req.user'ı sağlar)
+ */
+export const getMe: RequestHandler = async (req, res, next) => {
+    try {
+        // req.user, authenticate middleware'i tarafından set edilmiştir.
+        // req.user'ın tipinin doğru olduğundan emin olmak için req objesinde genişletilmiş User tipini varsayıyoruz.
+        const userId = req.user?.id; 
+
+        if (!userId) {
+            throw new AppError('Kullanıcı doğrulanamadı', ErrorCodes.UNAUTHORIZED, 401);
+        }
+
+        // 1) Service'ten kullanıcıyı ID ile çek
+        const user = await AuthService.getProfileById(userId); 
+
+        if (!user) {
+             throw new AppError('Kullanıcı bulunamadı', ErrorCodes.NOT_FOUND, 404);
+        }
+
+        // 2) HTTP 200 (OK) yanıtı dön
+        // Frontend'in beklediği temel profil verilerini döndürüyoruz.
+        res.status(200).json({
+            success: true,
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role, // Kritik rol bilgisi
+                isActive: user.isActive, 
+                // ... (Diğer gerekli alanlar eklenebilir)
+            },
+        });
+
+    } catch (err: any) {
+        next(err); 
+    }
+};

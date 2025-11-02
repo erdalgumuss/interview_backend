@@ -19,6 +19,28 @@ import { UpdateProfileDTO } from '../dtos/updateProfile.dto'; // DTO import edil
 
 
 class AuthService {
+        /**
+     * Kullanıcıyı ID'ye göre getirir ve hassas alanları (şifre, token bilgisi vb.) hariç tutar.
+     * Bu metod doğrudan Controller tarafından kullanılacaktır (GET /api/profile/me).
+     */
+    public async getProfileById(userId: string): Promise<IUser | null> {
+        // AuthRepository'den kullanıcıyı çekerken, hassas alanları dışarıda tutmak için 
+        // findById metodunun ikinci argümanını (seçim/projection) kullanıyoruz.
+        // Varsayılan olarak Mongoose/Repository şifreyi geri döndürmeyebilir, 
+        // ancak güvenli olmak için belirtiyoruz.
+        
+        // Eğer AuthRepository'de özel bir findById metodu varsa, onu kullanırız.
+        // Aksi takdirde, genel findById'yi kullanırken hassas alanları hariç tutarız.
+        const user = await AuthRepository.findById(userId, { 
+            // -password: 'password' alanını hariç tutar.
+            select: '-password' 
+        });
+
+        // NOT: user modelinde .toObject() veya .toJSON() çağrılmadıkça, Mongoose 
+        // şifreyi zaten dışarıda tutabilir. Ancak bu yöntem, döndürülen verinin güvenli 
+        // olmasını sağlar.
+        return user;
+    }
     /**
      * Kullanıcı kaydı (Register)
      */
@@ -235,6 +257,7 @@ class AuthService {
 
         return updatedUser;
     }
+  
 }
 
 export default new AuthService();
