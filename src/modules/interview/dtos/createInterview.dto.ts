@@ -13,8 +13,7 @@ import Joi from 'joi';
       'any.required': 'Expiration date is required.'
     }),
 
-    personalityTestId: Joi.string().optional(),
-
+  personalityTestId: Joi.string().optional().allow(''), 
     stages: Joi.object({
         personalityTest: Joi.boolean().optional().default(false),
         questionnaire: Joi.boolean().optional().default(true),
@@ -24,7 +23,7 @@ import Joi from 'joi';
         Joi.object({
             questionText: Joi.string().required(),
             expectedAnswer: Joi.string().required(),
-            explanation: Joi.string().optional(),
+            explanation: Joi.string().optional().allow(''),
             keywords: Joi.array().items(Joi.string()).required(),
             order: Joi.number().required(),
             duration: Joi.number().required(),

@@ -19,7 +19,7 @@ export const createInterviewSchema = Joi.object<CreateInterviewDTO>({
         .valid('active', 'completed', 'published', 'draft', 'inactive')
         .optional(),
 
-    personalityTestId: Joi.string().optional(),
+    personalityTestId: Joi.string().optional().allow(''),
 
     stages: Joi.object({
         personalityTest: Joi.boolean().default(false),
@@ -30,7 +30,7 @@ export const createInterviewSchema = Joi.object<CreateInterviewDTO>({
         Joi.object({
             questionText: Joi.string().required(),
             expectedAnswer: Joi.string().required(),
-            explanation: Joi.string().optional(),
+            explanation: Joi.string().optional().allow(''),
             keywords: Joi.array().items(Joi.string()).required(),
             order: Joi.number().required(),
             duration: Joi.number().required(),

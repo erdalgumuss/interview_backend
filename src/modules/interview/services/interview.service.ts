@@ -6,12 +6,26 @@ import { IInterview, InterviewStatus } from '../models/interview.model';
 import mongoose from 'mongoose';
 import { AppError } from '../../../middlewares/errors/appError'; // AppError import edildi
 import { ErrorCodes } from '../../../constants/errors'; // ErrorCodes import edildi
+import { 
+    DashboardDataDTO, 
+    ApplicationTrendDTO, 
+    DepartmentApplicationDTO, 
+    CandidateProfileDTO, 
+    FavoriteCandidateDTO, 
+    InterviewSummaryDTO
+} from '../dtos/dashboardData.dto';
+import {ApplicationRepository} from '../../application/repositories/application.repository'; 
+ import {VideoResponseRepository} from '../../video/repositories/videoResponse.repository';
 
 export class InterviewService {
     private interviewRepository: InterviewRepository;
+    private applicationRepository: ApplicationRepository; // Eğer varsa
+    private videoResponseRepository: VideoResponseRepository;
 
     constructor() {
         this.interviewRepository = new InterviewRepository();
+        this.applicationRepository = new ApplicationRepository();
+        this.videoResponseRepository = new VideoResponseRepository();
     }
 
     /**
@@ -181,5 +195,51 @@ export class InterviewService {
      */
     public async deleteInterview(interviewId: string): Promise<void> {
         await this.interviewRepository.deleteInterviewById(interviewId);
+    }
+    /**
+     * Dashboard için toplu istatistik verilerini getirir.
+     * Bu metot, Service katmanları arasında koordinasyon sağlar.
+     */
+    public async getDashboardData(userId: string): Promise<DashboardDataDTO> {
+        // Bu, farklı Repository çağrılarını koordine eden ana işlevdir.
+
+        // 1. Mülakat İstatistikleri (InterviewRepository)
+        const userInterviews = await this.interviewRepository.getInterviewsByUser(userId);
+        const totalInterviews = userInterviews.length;
+        const publishedCount = userInterviews.filter(i => i.status === InterviewStatus.PUBLISHED).length;
+
+        // 2. Uygulama/Aday Trendleri (Simüle Edildi - Gerçekte ApplicationRepository'den gelir)
+        // Dashboard Frontend'inin beklediği tüm alanları doldurmak zorundayız.
+        const applicationTrends: ApplicationTrendDTO[] = [
+            { date: '2025-10-01', count: 15 },
+            { date: '2025-10-02', count: 22 },
+        ];
+        
+        // 3. Favori Adaylar (Simüle Edildi - Gerçekte CandidateRepository'den gelir)
+        const favoriteCandidates: FavoriteCandidateDTO[] = [
+            { id: 'c1', name: 'Ayşe Yılmaz', position: 'Developer', score: 92 },
+            { id: 'c2', name: 'Can Demir', position: 'Analist', score: 88 },
+        ];
+
+        // 4. Diğer Özet Veriler (Simüle Edildi)
+        const departmentApplications: DepartmentApplicationDTO[] = [
+             { department: 'Yazılım', count: 120 },
+             { department: 'IK', count: 45 },
+        ];
+        
+        const candidateProfiles: CandidateProfileDTO[] = [
+             { experience: 'Junior', count: 60 },
+             { experience: 'Senior', count: 40 },
+        ];
+
+
+        return {
+            applicationTrends,
+            departmentApplications,
+            candidateProfiles,
+            favoriteCandidates,
+            // Ek olarak mülakat özeti eklenebilir
+            interviewSummary: { totalInterviews, publishedCount } as InterviewSummaryDTO
+        };
     }
 }

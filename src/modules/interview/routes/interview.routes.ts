@@ -41,7 +41,7 @@ router.delete('/:id', authenticate, asyncHandler(interviewController.deleteInter
 // --- SORGULAMA (GET) ---
 router.get('/all', authenticate, asyncHandler(interviewController.getAllInterviews.bind(interviewController)));
 router.get('/my', authenticate, asyncHandler(interviewController.getUserInterviews.bind(interviewController)));
-router.get('/dashboard', authenticate, asyncHandler(interviewController.getUserInterviews.bind(interviewController))); // 'my' ile aynı endpoint olduğu varsayıldı
+router.get('/dashboard', authenticate, asyncHandler(interviewController.getDashboardData.bind(interviewController))); // 'my' ile aynı endpoint olduğu varsayıldı
 router.get('/:id', authenticate, asyncHandler(interviewController.getInterviewById.bind(interviewController)));
 
 

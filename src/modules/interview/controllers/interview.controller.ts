@@ -50,8 +50,8 @@ class InterviewController {
         }
     };
 
-    /**
-     * GET /interviews/my - Kullanıcının oluşturduğu mülakatları getir.
+  /**
+     * GET /interviews/my - Kullanıcının oluşturduğu mülakatları getir. (Mevcut metot)
      */
     public getUserInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -62,6 +62,28 @@ class InterviewController {
 
             const interviews = await this.interviewService.getInterviewsByUser(userId);
             res.json({ success: true, data: interviews });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * GET /interviews/dashboard - Dashboard verilerini getirir.
+     * Bu metot, DashboardPage'in 404 hatasını çözer.
+     */
+    public getDashboardData = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+            }
+
+            // Service'ten toplu dashboard verisini çek
+            const dashboardData = await this.interviewService.getDashboardData(userId);
+            
+            // Frontend'in beklediği yapıda yanıt dön (DashboardDataDTO)
+            // success: true ve tüm istatistik alanları döndürülüyor.
+            res.json({ success: true, ...dashboardData }); 
         } catch (error) {
             next(error);
         }

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { AppError } from '../middlewares/error/appError';
+import { AppError } from '../middlewares/errors/appError';
 import { ErrorCodes } from '../constants/errors';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
