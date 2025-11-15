@@ -92,23 +92,53 @@ class InterviewController {
     /**
      * GET /interviews/:id - Tek bir mülakatı getir (Gizlilik Kontrollü).
      */
-    public getInterviewById = async (req: Request, res: Response, next: NextFunction) => {
+     public getInterviewById = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { id } = req.params;
-            const userId = req.user?.id;
+            const userId = req.user?.id; // String
 
+            // 1. Mülakatı çek
             const interview = await this.interviewService.getInterviewById(id);
 
+            // 2. Mongoose hiç bulamadıysa (deletedAt != null veya ID hatalı)
             if (!interview) {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
+            
+            // Kullanıcının ID'si yoksa yetkilendirme hatası fırlatılır (Authenticate middleware'den sonra olmamalı ama kontrol ediyoruz)
+            if (!userId) {
+                 throw new AppError('Unauthorized access', ErrorCodes.UNAUTHORIZED, 401);
+            }
 
-            // Gizlilik Kontrolü: Yalnızca sahibi DRAFT mülakatı görebilir.
-            // PUBLISHED olanlar, aday rotasından erişilebilir (farklı bir controller/rota olmalı).
-            if (interview.status === InterviewStatus.DRAFT && interview.createdBy.userId.toString() !== userId) {
+            // 📌 YENİ KONTROL: Kıyaslama yapmadan önce loglama yapalım
+            console.log(`[AUTH CHECK] Current User ID: ${userId}`);
+            console.log(`[AUTH CHECK] Created By ID: ${interview.createdBy.userId.toString()}`);
+            console.log(`[AUTH CHECK] Status: ${interview.status}`);
+            
+            // 3. Gizlilik Kontrolü: Yalnızca sahibi DRAFT mülakatı görebilir.
+            
+            // Mongoose'da kıyaslama yapmanın en güvenli yolu: .equals()
+            // Modelinizdeki createdBy.userId alanı bir ObjectId referansı olduğu için .equals() kullanılmalıdır.
+            const isOwner = (interview.createdBy.userId as any).equals(userId); 
+            
+            // Not: Eğer populate çalıştıysa, interview.createdBy.userId bir tam User objesi olabilir, 
+            // bu durumda interview.createdBy.userId._id.equals(userId) kullanılmalıdır.
+            // Repository'deki populate tanımına bakarsak: .populate('createdBy.userId', ...)
+            // Bu nedenle, createdBy.userId'nin kendisi bir obje olabilir. En güvenli yol, 
+            // eğer obje ise onun _id'sini, değilse doğrudan kendini kıyaslamaktır.
+
+            // Eğer interview.createdBy.userId bir alt nesne ise (populate edilmiş):
+            const ownerIdToCompare = interview.createdBy.userId._id || interview.createdBy.userId;
+            const isOwnerFinal = (ownerIdToCompare as any).equals ? (ownerIdToCompare as any).equals(userId) : ownerIdToCompare.toString() === userId;
+            
+            
+            if (interview.status === InterviewStatus.DRAFT && !isOwnerFinal) {
                  // 404 döndürerek mülakatın varlığını gizliyoruz.
                  throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
+            
+            // 📌 LOG: Eğer buraya düşerse başarılı demektir.
+            console.log(`[AUTH CHECK] SUCCESS: User ${userId} is authorized for status ${interview.status}`);
 
             res.json({ success: true, data: interview });
         } catch (error) {

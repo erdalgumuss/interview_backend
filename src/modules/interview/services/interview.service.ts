@@ -54,11 +54,8 @@ export class InterviewService {
             );
         }
 
-        // 📌 Interview Link oluşturulması
+          // ✅ DÜZELTME: Link oluşturma mantığı kaldırıldı.
         const interviewId = new mongoose.Types.ObjectId();
-        const interviewLink = await this.interviewRepository.generateInterviewLink(
-            interviewId.toString()
-        );
 
         const interviewData: Partial<IInterview> = {
             _id: interviewId,
@@ -71,11 +68,8 @@ export class InterviewService {
                 ? new mongoose.Types.ObjectId(data.personalityTestId)
                 : undefined,
             questions: data.questions,
-            interviewLink: {
-                link: interviewLink,
-                expirationDate: parsedExpirationDate,
-            },
-            status: InterviewStatus.DRAFT 
+            // ❌ KALDIRILDI: Link bilgisi (interviewLink) ilk oluşturmada boş bırakılır.
+            status: InterviewStatus.DRAFT // ✅ ZORUNLU KILINDI: İlk durum her zaman DRAFT'tır.
         };
 
         return this.interviewRepository.createInterview(interviewData);
@@ -141,8 +135,9 @@ export class InterviewService {
         return this.interviewRepository.updateInterviewById(interviewId, updateData);
     }
 
-    /**
+     /**
      * Mülakatı yayına al.
+     * Bu metot, durumu PUBLISHED yapar ve mülakat linkini oluşturur.
      */
     public async publishInterview(interviewId: string): Promise<IInterview | null> {
         const interview = await this.interviewRepository.getInterviewById(interviewId);
@@ -156,7 +151,7 @@ export class InterviewService {
             throw new AppError(
                 `Cannot publish an interview with status: ${interview.status}`, 
                 ErrorCodes.CONFLICT, 
-                409 // CONFLICT kullanmak daha uygun
+                409
             ); 
         }
         
@@ -172,15 +167,27 @@ export class InterviewService {
              throw new AppError(
                  'Cannot publish an interview that has already expired.', 
                  ErrorCodes.FORBIDDEN, 
-                 403 // Süresi dolmuş bir şeyi yayınlamak yasaklanmıştır
+                 403
              );
         }
         
-        return this.interviewRepository.updateInterviewById(interviewId, {
-            status: InterviewStatus.PUBLISHED
-        });
-    }
+        // ✅ YENİ MANTIK: Mülakat linkini oluştur
+        const interviewLink = await this.interviewRepository.generateInterviewLink(
+            interviewId
+        );
 
+        // ✅ YENİ MANTIK: Link bilgisini ve status'u kaydet
+        const updatedInterview = await this.interviewRepository.updateInterviewById(interviewId, {
+            status: InterviewStatus.PUBLISHED,
+            interviewLink: {
+                link: interviewLink,
+                // Linkin bitiş tarihini mülakatın bitiş tarihiyle eşitliyoruz.
+                expirationDate: interview.expirationDate, 
+            }
+        });
+
+        return updatedInterview;
+    }
     /**
      * Mülakatı soft-delete yap. (Controller'dan sahiplik kontrolü gelecektir)
      */
