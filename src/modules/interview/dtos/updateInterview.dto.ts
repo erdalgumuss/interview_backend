@@ -6,7 +6,7 @@ import Joi from 'joi';
  */
 export const updateInterviewSchema = Joi.object({
     title: Joi.string().optional().min(5).max(100),
-    
+    description: Joi.string().optional().allow('').allow(null),
     // Süre uzatma veya değiştirme için
     expirationDate: Joi.alternatives([
       Joi.date().iso(),
@@ -46,6 +46,7 @@ export const updateInterviewSchema = Joi.object({
  */
 export interface UpdateInterviewDTO {
     title?: string;
+    description?: string;
     expirationDate?: Date;
     personalityTestId?: string | null; // null desteği eklendi
     status?: 'active' | 'completed' | 'published' | 'draft' | 'inactive';

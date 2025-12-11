@@ -166,7 +166,13 @@ class InterviewController {
             }
     
             // Sahiplik Kontrolü
-            if (existingInterview.createdBy.userId.toString() !== userId) {
+            const createdById = (existingInterview.createdBy.userId as any)._id || existingInterview.createdBy.userId;
+            
+            const isOwner = createdById && (createdById as any).equals 
+                ? (createdById as any).equals(userId) 
+                : createdById.toString() === userId;
+
+            if (!isOwner) { // Sahiplik kontrolü düzeltildi
                 throw new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403);
             }
             
@@ -196,12 +202,20 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Sahiplik Kontrolü
-            if (interview.createdBy.userId.toString() !== userId) {
+            // Populated dökümanda User ID'sini al (._id veya doğrudan userId)
+            const createdById = (interview.createdBy.userId as any)._id || interview.createdBy.userId;
+            
+            // Mongoose'un .equals() metodu veya toString() ile kıyaslama yap
+            const isOwner = createdById && (createdById as any).equals 
+                ? (createdById as any).equals(userId) 
+                : createdById.toString() === userId;
+                
+            if (!isOwner) { // Sahiplik kontrolü düzeltildi
                 throw new AppError('Forbidden: Cannot delete other user interviews', ErrorCodes.UNAUTHORIZED, 403);
             }
-    
-            await this.interviewService.deleteInterview(id); // Veya softDeleteInterview(id, userId);
+            
+            // Eğer isOwner TRUE ise silme işlemine devam et
+            await this.interviewService.deleteInterview(id);
     
             res.json({ success: true, message: 'Interview deleted successfully' });
         } catch (error) {
@@ -226,7 +240,12 @@ class InterviewController {
             if (!interview) {
                  throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
-            if (interview.createdBy.userId.toString() !== userId) {
+            const createdById = (interview.createdBy.userId as any)._id || interview.createdBy.userId;
+            // Eğer createdById bir Mongoose ID objesiyse .equals() kullanılır, değilse toString()
+            const isOwner = createdById && (createdById as any).equals 
+                ? (createdById as any).equals(userId) 
+                : createdById.toString() === userId;
+                if (!isOwner) { // Sahiplik kontrolü düzeltildi
                 throw new AppError('Forbidden: Cannot publish other user interviews', ErrorCodes.UNAUTHORIZED, 403);
             }
 
@@ -260,9 +279,7 @@ class InterviewController {
             }
             
             // Sahiplik Kontrolü
-            if (interview.createdBy.userId.toString() !== userId) {
-                throw new AppError('Forbidden: Cannot update link for other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
+          
 
             // Link oluşturma mantığı burada (Controller) olduğu için bir risk taşır.
             // Bu mantık Servis'e taşınmalıdır.

@@ -33,6 +33,7 @@ export enum InterviewStatus {
  */
 export interface IInterview extends Document {
     title: string;
+    description?: string;
     expirationDate: Date;
     createdBy: {
         userId: mongoose.Types.ObjectId;
@@ -50,6 +51,14 @@ export interface IInterview extends Document {
     questions: IInterviewQuestion[];
     createdAt?: Date;
     updatedAt?: Date;
+    aiAnalysisSettings: {
+        useAutomaticScoring: boolean;
+        gestureAnalysis: boolean;
+        speechAnalysis: boolean;
+        eyeContactAnalysis: boolean;
+        tonalAnalysis: boolean;
+        keywordMatchScore: number; // Global ağırlık/ayar için
+    };
 }
 
 /**
@@ -84,7 +93,8 @@ const InterviewQuestionSchema = new Schema<IInterviewQuestion>(
 const InterviewSchema = new Schema<IInterview>(
     {
         title: { type: String, required: true },
-        expirationDate: { type: Date, required: true },
+        description: { type: String, required: false, default: '' }, 
+        expirationDate: {  type: Date, required: true },
         createdBy: {
             userId: {
                 type: mongoose.Schema.Types.ObjectId,
@@ -111,9 +121,18 @@ const InterviewSchema = new Schema<IInterview>(
         },
         questions: [InterviewQuestionSchema],
     },
+    
     {
         timestamps: true // createdAt & updatedAt otomatik olarak eklenecek
     }
+    
 );
-
+const AiAnalysisSettingsSchema = new Schema({
+    useAutomaticScoring: { type: Boolean, default: true },
+    gestureAnalysis: { type: Boolean, default: true },
+    speechAnalysis: { type: Boolean, default: true },
+    eyeContactAnalysis: { type: Boolean, default: false },
+    tonalAnalysis: { type: Boolean, default: false },
+    keywordMatchScore: { type: Number, default: 0 }, // 0: Disabled, 1: Enabled veya ağırlık
+}, { _id: false });
 export default mongoose.model<IInterview>('Interview', InterviewSchema);

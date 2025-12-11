@@ -4,6 +4,7 @@ import Joi from 'joi';
  * Mülakat oluşturma için DTO şeması
  */export const createInterviewSchema = Joi.object({
     title: Joi.string().required().min(5).max(100),
+    description: Joi.string().optional().allow(''), // 📌 YENİ: Açıklama eklendi
     
     expirationDate: Joi.alternatives([
       Joi.date().iso(),
@@ -41,6 +42,7 @@ import Joi from 'joi';
  */
 export interface CreateInterviewDTO {
     title: string;
+    description?: string;
     expirationDate: Date;
     personalityTestId?: string;
     stages: {
