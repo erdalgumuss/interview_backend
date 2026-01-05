@@ -43,4 +43,9 @@ export interface UpdateCandidateDTO {
     personal?: string[];
     languages?: string[];
   };
+   documents?: {
+    resume?: string;
+    certificates?: string[];
+    socialMediaLinks?: string[];
+  };
 }

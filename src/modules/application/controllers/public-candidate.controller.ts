@@ -30,6 +30,9 @@ class PublicCandidateController { // ✅ İsim güncellendi
     this.getVideoUploadUrl = this.getVideoUploadUrl.bind(this); // ✅ Yeni metod bind edildi
     this.submitVideoResponse = this.submitVideoResponse.bind(this);
     this.submitPersonalityTestResponse = this.submitPersonalityTestResponse.bind(this);
+
+    this.getMyApplication = this.getMyApplication.bind(this);
+    this.getUploadUrl = this.getUploadUrl.bind(this);
   }
 
   /**
@@ -235,6 +238,58 @@ class PublicCandidateController { // ✅ İsim güncellendi
         success: true,
         message: 'Personality test responses saved.',
         data: updatedApplication,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+  /**
+   * ✅ YENİ METOT: Adayın Mevcut Durumunu Getir (F5 desteği)
+   * GET /api/public/me
+   */
+  public getMyApplication = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Middleware'den (candidateAuth) gelen user id = applicationId
+      const applicationId = req.user?.id; 
+
+      if (!applicationId) {
+        throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      }
+
+      // Servis'te bu metodu az önce eklemiştik
+      const application = await this.candidateService.getMyApplication(applicationId);
+
+      res.status(200).json({
+        success: true,
+        data: application,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  /**
+   * ✅ YENİ METOT: Genel Dosya Yükleme (CV, Sertifika vb.)
+   * GET /api/public/upload-url?fileType=...&fileName=...
+   */
+  public getUploadUrl = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const applicationId = req.user?.id;
+      const { fileType, fileName } = req.query;
+
+      if (!applicationId) throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      if (!fileType || !fileName) throw new AppError('Missing file info', ErrorCodes.BAD_REQUEST, 400);
+
+      // Servis'te bu metodu az önce eklemiştik
+      const result = await this.candidateService.getUploadUrl(
+        applicationId, 
+        String(fileType), 
+        String(fileName)
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result // { uploadUrl, fileKey }
       });
     } catch (err) {
       next(err);

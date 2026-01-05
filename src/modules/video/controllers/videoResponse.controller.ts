@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { VideoResponseService } from '../services/videoResponse.service';
 import { uploadVideoResponseSchema, getVideoResponsesSchema } from '../dtos/videoResponse.dto';
-import { AppError } from '../../../middlewares/error/appError';
+import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import { CandidateAuthRequest } from '../../../middlewares/candidateAuth.middleware';
 

@@ -174,15 +174,21 @@ export class InterviewService {
              throw new AppError('Cannot publish an interview that has already expired.', ErrorCodes.FORBIDDEN, 403);
         }
         
-        // ✅ YENİ MANTIK: Link üretimi Repository'den Service'e taşındı.
         const baseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
-        // URL-safe base64 encoding
+        
+        // ❌ İPTAL: Base64 Encoding şimdilik kapalı.
+        // Frontend doğrudan ID ile API isteği atacağı için şifreleme karmaşıklık yaratır.
+        // İleride 'shortId' veya 'slug' sistemine geçilebilir.
+        /*
         const encodedId = Buffer.from(interviewId.toString()).toString('base64')
             .replace(/\+/g, '-')
             .replace(/\//g, '_')
             .replace(/=+$/, '');
+        */
             
-        const interviewLink = `${baseUrl}/applications/${encodedId}`; // Frontend rotasına uygun link
+        // ✅ DÜZELTME 1: Rota 'applications' -> 'application' (Frontend klasör adıyla aynı)
+        // ✅ DÜZELTME 2: encodedId -> interviewId (Direkt ID kullanıyoruz)
+        const interviewLink = `${baseUrl}/application/${interviewId}`; 
 
         const updatedInterview = await this.interviewRepository.updateInterviewById(interviewId, {
             status: InterviewStatus.PUBLISHED,

@@ -5,7 +5,7 @@ import CandidateService from '../services/candidate.service';
 import { ICandidateFilters, CandidateStatus } from '../types/candidate.types';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-
+import UserModel from '../../auth/models/user.model';
 /**
  * Candidate Controller
  * 
@@ -251,36 +251,26 @@ class CandidateController {
     /**
      * POST /api/candidates/:candidateId/notes
      */
-    addNote = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+   addNote = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { candidateId } = req.params;
             const { content } = req.body;
             const userId = req.user?.id;
 
-            if (!userId) {
-                return next(new AppError('Kullanıcı kimliği bulunamadı', ErrorCodes.UNAUTHORIZED, 401));
-            }
+            if (!userId) return next(new AppError('Yetkisiz işlem', ErrorCodes.UNAUTHORIZED, 401));
+            if (!content?.trim()) return next(new AppError('Not içeriği boş olamaz', ErrorCodes.VALIDATION_ERROR, 400));
 
-            if (!content || content.trim().length === 0) {
-                return next(new AppError('Not içeriği gerekli', ErrorCodes.VALIDATION_ERROR, 400));
-            }
+            // 1. Kullanıcı adını veritabanından bul
+            const user = await UserModel.findById(userId).select('firstName lastName email');
+            const userName = user ? `${user.name}` : 'Bilinmeyen Kullanıcı';
 
-            // TODO: Kullanıcı adını user service'den al
-            const userName = 'HR User'; // Geçici
-
+            // 2. Notu ekle
             const note = await CandidateService.addNote(candidateId, userId, userName, content);
 
-            if (!note) {
-                return next(new AppError('Not eklenemedi', ErrorCodes.NOT_FOUND, 404));
-            }
+            if (!note) return next(new AppError('Not eklenemedi', ErrorCodes.INTERNAL_SERVER_ERROR, 500));
 
-            res.status(201).json({
-                success: true,
-                data: note
-            });
-        } catch (error) {
-            next(error);
-        }
+            res.status(201).json({ success: true, data: note });
+        } catch (error) { next(error); }
     };
 
     // ================================

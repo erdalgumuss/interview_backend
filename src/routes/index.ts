@@ -16,7 +16,7 @@ const loadRoutes = (app: Application): void => {
     app.use('/api/auth', authRoutes);
     app.use('/api/profile', profileRoutes);
     app.use('/api/interviews', interviewRoutes);
-    //app.use('/api/public', publicInterviewRouter);
+    app.use('/api/public', publicInterviewRouter);
     app.use('/api/appointments', appointmentRoutes);
     app.use('/api/applications', applicationRoutes); // Yeni eklenen rota
     app.use('/api/reports', reportsRoutes); // Reports modülü

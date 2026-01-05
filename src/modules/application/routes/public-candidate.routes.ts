@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import candidateController from '../controllers/public-candidate.controller';
 import { asyncHandler } from '../../../middlewares/asyncHandler';
-import { authenticateCandidate } from '../../../middlewares/auth';
+import { authenticateCandidate } from '../../../middlewares/auth'; // Candidate token kontrolü
 import { rateLimitMiddleware } from '../../../middlewares/rateLimitMiddleware';
 import { validateRequest } from '../../../middlewares/validationMiddleware';
 import { createApplicationSchema } from '../dtos/createApplication.dto';
@@ -11,7 +11,7 @@ import { updateCandidateSchema } from '../dtos/updateCandidate.dto';
 const router = Router();
 
 /**
- * ✅ 1) Mülakat detaylarını getirme
+ * ✅ 1) Mülakat detaylarını getirme (Landing)
  * GET /api/public/interview/:interviewId
  */
 router.get(
@@ -20,7 +20,7 @@ router.get(
 );
 
 /**
- * ✅ 2) Aday başvuru oluşturma (Aynı mülakata tekrar başvurmayı engeller!)
+ * ✅ 2) Aday başvuru oluşturma
  * POST /api/public
  */
 router.post(
@@ -42,7 +42,7 @@ router.post(
 );
 
 /**
- * ✅ 4) OTP tekrar gönderme (Yeni API eklendi)
+ * ✅ 4) OTP tekrar gönderme
  * POST /api/public/resendOtp
  */
 router.post(
@@ -53,7 +53,17 @@ router.post(
 );
 
 /**
- * ✅ 5) Aday detay bilgilerini güncelleme
+ * ✅ 5) Adayın Mevcut Durumunu Getir (F5 / Refresh Desteği)
+ * GET /api/public/me
+ */
+router.get(
+  '/me',
+  authenticateCandidate,
+  asyncHandler(candidateController.getMyApplication)
+);
+
+/**
+ * ✅ 6) Aday detay bilgilerini güncelleme (Wizard Form)
  * PUT /api/public/update
  */
 router.put(
@@ -62,10 +72,45 @@ router.put(
   validateRequest(updateCandidateSchema),
   asyncHandler(candidateController.updateCandidateDetails)
 );
-// 6. Video yanıtı kaydetme (URL)
-router.post('/video/response', authenticateCandidate, candidateController.submitVideoResponse);
 
-// 7. Kişilik testi yanıtlarını kaydetme
-router.post('/personality-test/response', authenticateCandidate, candidateController.submitPersonalityTestResponse);
+/**
+ * ✅ 7) Genel Dosya Yükleme URL'i Al (CV, Sertifika)
+ * GET /api/public/upload-url
+ */
+router.get(
+  '/upload-url',
+  authenticateCandidate,
+  asyncHandler(candidateController.getUploadUrl)
+);
+
+/**
+ * ✅ 8) Video Yükleme URL'i Al (Sınav Soruları İçin)
+ * GET /api/public/video/upload-url
+ */
+router.get(
+  '/video/upload-url',
+  authenticateCandidate,
+  asyncHandler(candidateController.getVideoUploadUrl)
+);
+
+/**
+ * ✅ 9) Video yanıtı kaydetme (URL ve Status)
+ * POST /api/public/video/response
+ */
+router.post(
+  '/video/response',
+  authenticateCandidate,
+  asyncHandler(candidateController.submitVideoResponse)
+);
+
+/**
+ * ✅ 10) Kişilik testi yanıtlarını kaydetme
+ * POST /api/public/personality-test/response
+ */
+router.post(
+  '/personality-test/response',
+  authenticateCandidate,
+  asyncHandler(candidateController.submitPersonalityTestResponse)
+);
 
 export default router;

@@ -4,7 +4,7 @@ import { InterviewRepository } from '../../interview/repositories/interview.repo
 import { ApplicationRepository } from '../repositories/application.repository';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-import { IInterview, InterviewStatus } from '../../interview/models/interview.model';
+import { InterviewStatus } from '../../interview/models/interview.model';
 import { IApplication, IApplicationResponse } from '../models/application.model';
 import { CreateApplicationDTO } from '../dtos/createApplication.dto';
 import { VerifyOtpDTO, VerifyOtpResponseDTO } from '../dtos/otpVerify.dto';
@@ -21,6 +21,8 @@ import InterviewModel from '../../interview/models/interview.model';
 // Candidate Pool Sync
 import CandidatePoolService from '../../candidates/services/candidate.service';
 
+// TODO: Gerçek S3 Servisini import edin
+// import { s3Service } from '../../../services/s3.service';
 
 
 export class CandidateService {
@@ -72,6 +74,42 @@ export class CandidateService {
   
   }
   
+/**
+   * ✅ YENİ METOT: Adayın mevcut başvuru durumunu ve girilen verileri getirir.
+   */
+  public async getMyApplication(applicationId: string): Promise<IApplication> {
+    const application = await this.candidateRepository.getApplicationById(applicationId);
+    if (!application) {
+      throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
+    }
+    return application;
+  }
+
+  /**
+   * ✅ YENİ METOT: Dosya (CV, Sertifika) yüklemek için Presigned URL verir.
+   */
+  public async getUploadUrl(applicationId: string, fileType: string, fileName: string): Promise<{ uploadUrl: string, fileKey: string }> {
+    const application = await this.candidateRepository.getApplicationById(applicationId);
+    if (!application) throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
+
+    // Klasör belirleme
+    let folder = 'others';
+    if (fileType === 'application/pdf') folder = 'documents';
+    else if (fileType.startsWith('image/')) folder = 'images';
+    
+    // Dosya anahtarı (key) oluştur
+    // Format: applications/{appId}/{folder}/{timestamp}-{filename}
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const key = `applications/${applicationId}/${folder}/${Date.now()}-${safeFileName}`;
+
+    // TODO: Gerçek S3 entegrasyonu buraya gelecek
+    // const uploadUrl = await s3Service.getSignedUrl('putObject', { Key: key, ContentType: fileType });
+    
+    // MOCK URL (Development için)
+    const uploadUrl = `https://mock-s3-upload-url.com/${key}`;
+
+    return { uploadUrl, fileKey: key };
+  }
 
   /**
    * Aday form verilerini gönderir -> Uygulama kaydı oluşturulur -> OTP kodu oluşturup SMS gönderilir.
@@ -215,34 +253,50 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
 }
 
 
-  /**
+ /**
    * Aday detay bilgilerini güncelleme işlemi.
+   * ✅ GÜNCELLENDİ: Documents (CV, Sertifika) desteği eklendi
    */
   public async updateCandidateDetails(data: UpdateCandidateDTO) {
-    const { applicationId, education, experience, skills } = data;
+    const { applicationId, education, experience, skills, documents } = data; // documents eklendi
   
     const application = await this.candidateRepository.getApplicationById(applicationId);
     if (!application) {
       throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
     }
   
-    // ✅ Varsayılan değerleri atayarak undefined hatasını önlüyoruz
-       application.education = education ?? application.education; 
+    if (education) application.education = education;
 
-   application.experience = experience?.map(exp => ({
-      company: exp.company,
-      position: exp.position,
-      duration: exp.duration,
-      responsibilities: exp.responsibilities ?? "", 
-    })) ?? application.experience;
+    if (experience) {
+       application.experience = experience.map(exp => ({
+          company: exp.company,
+          position: exp.position,
+          duration: exp.duration,
+          responsibilities: exp.responsibilities ?? "", 
+        }));
+    }
   
-   application.skills = {
-      technical: skills?.technical ?? application.skills?.technical ?? [],
-      personal: skills?.personal ?? application.skills?.personal ?? [],
-      languages: skills?.languages ?? application.skills?.languages ?? [],
-    };
+    if (skills) {
+       application.skills = {
+          technical: skills.technical ?? application.skills?.technical ?? [],
+          personal: skills.personal ?? application.skills?.personal ?? [],
+          languages: skills.languages ?? application.skills?.languages ?? [],
+        };
+    }
+
+    // ✅ Belge güncelleme mantığı
+    if (documents) {
+        application.documents = {
+            resume: documents.resume ?? application.documents?.resume,
+            certificates: documents.certificates ?? application.documents?.certificates ?? [],
+            socialMediaLinks: documents.socialMediaLinks ?? application.documents?.socialMediaLinks ?? [],
+        };
+    }
   
-    application.status = 'in_progress';
+    // Eğer başvuru henüz 'pending' ise ve veri girişi başladıysa 'in_progress' yap
+    if (application.status === 'pending') {
+        application.status = 'in_progress';
+    }
   
     const updatedApplication = await this.candidateRepository.updateCandidate(applicationId, application);
 
@@ -252,8 +306,8 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
 
     return {
       ...updatedApplication.toObject(),
-      completed: true,  // ✅ Başvuru tamamlandı bilgisi eklendi
-  };
+      completed: true,
+    };
   }
   /**
      * ✅ YENİ METOT: Aday Video Yanıtını Kaydeder ve AI Analizini Tetikler
@@ -303,14 +357,20 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
             // Tüm videolar yüklendi - batch analizi başlat
             application.status = 'awaiting_ai_analysis';
             
-            if (aiAnalysisRequired !== false) {
-                // YENİ API: Batch analiz kuyruğuna ekle
-                await aiAnalysisStartQueue.add('startAnalysis', { 
-                    applicationId: applicationId,
-                });
-                
-                console.log(`✅ [BullMQ] Tüm videolar yüklendi (${uploadedVideos}/${totalQuestions}). Batch AI analizi başlatılıyor.`);
-            }
+           if (aiAnalysisRequired !== false) {
+    if (!aiAnalysisStartQueue) {
+        console.log('🟡 AI analysis skipped (queue disabled)');
+    } else {
+        await aiAnalysisStartQueue.add('startAnalysis', {
+            applicationId,
+        });
+
+        console.log(
+          `✅ [BullMQ] Batch AI analizi kuyruğa eklendi (${uploadedVideos}/${totalQuestions})`
+        );
+    }
+}
+
         } else {
             // Henüz tüm videolar yüklenmedi
             application.status = 'awaiting_video_responses';
