@@ -1,52 +1,353 @@
-Auth Modülü - Kullanıcı Kimlik Doğrulama Sistemi
-Bu modül, kullanıcıların kayıt olması, e-posta doğrulaması, giriş yapması, token yönetimi ve şifre sıfırlama işlemlerini kapsar.
+# 🔐 Auth Module
 
-🎯 Modülün Amaçları
-Kullanıcıların register, login, logout gibi temel işlemlerini yönetmek.
+## 📋 Genel Bakış
 
-JWT Access Token ve Refresh Token sistemiyle güvenli oturum yönetimi.
+Auth modülü, platformun kimlik doğrulama ve yetkilendirme sistemini yönetir. Kullanıcı kaydı, e-posta doğrulaması, güvenli oturum yönetimi (JWT), şifre sıfırlama ve profil yönetimi işlevlerini kapsar.
 
-Şifre sıfırlama, e-posta doğrulama ve kullanıcı aktivasyon süreçlerini desteklemek.
+## 🎯 Modülün Amaçları
 
-Çoklu cihazlardan giriş ve token güvenliğini korumak.
+- Kullanıcıların register, login, logout işlemlerini yönetmek
+- JWT Access Token ve Refresh Token sistemiyle güvenli oturum yönetimi
+- E-posta doğrulama ile hesap aktivasyonu
+- Şifre sıfırlama akışı
+- Çoklu cihaz/oturum güvenliği
+- Token versiyon kontrolü ile güvenlik
+- Kullanıcı profil yönetimi
 
-📚 Kapsadığı Ana Fonksiyonlar
+## 🏗️ Mimari Yapı
 
-Fonksiyon Açıklama
-POST /auth/register Yeni kullanıcı kaydı oluşturur.
-GET /auth/verify-email Email doğrulama token'ı ile kullanıcıyı aktif eder.
-POST /auth/login Kullanıcı giriş yapar, access ve refresh token alır.
-POST /auth/logout Kullanıcının refresh token'ını iptal eder.
-POST /auth/refresh Refresh token ile yeni access token alır.
-POST /auth/forgot-password Şifre sıfırlamak için mail gönderir.
-POST /auth/reset-password Gelen token ile şifreyi sıfırlar.
-🛠️ Yapı ve Akış
+```
+auth/
+├── controllers/
+│   └── auth.controller.ts          # Tüm auth endpoint'leri
+├── dtos/
+│   ├── login.dto.ts                # Giriş validasyonu
+│   ├── register.dto.ts             # Kayıt validasyonu
+│   ├── resetPassword.dto.ts        # Şifre sıfırlama
+│   └── updateProfile.dto.ts        # Profil güncelleme
+├── models/
+│   ├── user.model.ts               # Kullanıcı şeması
+│   └── token.model.ts              # Refresh token şeması
+├── repositories/
+│   ├── auth.repository.ts          # Kullanıcı DB işlemleri
+│   └── token.repository.ts         # Token DB işlemleri
+├── routes/
+│   ├── auth.routes.ts              # Auth rotaları
+│   └── profile.routes.ts           # Profil rotaları
+├── services/
+│   └── auth.service.ts             # İş mantığı
+└── README.md
+```
 
-1. Controller Katmanı (controllers/auth.controller.ts)
-   **HTTP isteklerini karşılar ve gerekli service/metotları tetikler.**
+## 🔗 Modül Bağımlılıkları
 
-register: Kullanıcıyı kaydeder ve email doğrulama token'ı yollar.
+### İç Bağımlılıklar
+| Modül | İlişki Türü | Açıklama |
+|-------|-------------|----------|
+| `middlewares/auth` | Koruma | JWT doğrulama middleware'i |
+| `utils/tokenUtils` | Yardımcı | Token oluşturma/doğrulama |
+| `utils/emailUtils` | Yardımcı | E-posta gönderimi |
 
-verifyEmail: Gelen token'ı çözümler ve kullanıcıyı aktif hale getirir.
+### Dış Bağımlılıklar
+| Kütüphane | Kullanım |
+|-----------|----------|
+| `bcrypt` | Şifre hashleme |
+| `jsonwebtoken` | JWT işlemleri |
+| `nodemailer` | E-posta gönderimi |
 
-login: Email + şifre kontrolü yapar, başarılı girişte cookie'lere access ve refresh token yazar.
+---
 
-logout: Kullanıcının refresh token'ını iptal eder ve cookie'leri temizler.
+## 📊 Veri Modeli
 
-refreshAccessToken: Refresh token ile yeni access ve refresh token üretir.
+### IUser Interface
 
-requestPasswordReset: Şifre sıfırlama isteği oluşturur, kullanıcıya email gönderir.
+```typescript
+interface IUser {
+  _id: ObjectId;
+  name: string;
+  email: string;
+  password: string;                        // Hashlenmiş
+  role: 'admin' | 'company' | 'user';
+  isActive: boolean;
+  
+  // Hesap Güvenliği
+  accountLockedUntil?: Date;
+  failedLoginAttempts: number;
+  
+  // Doğrulama
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
+  phone?: string;
+  
+  // Token Güvenliği
+  tokenVersion: number;                    // Token invalidation için
+  lastLoginAt?: Date;
+  lastKnownIPs?: string[];
+  sessionCount: number;
+  
+  // Şifre Sıfırlama
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
+  passwordResetTries?: number;
+  
+  // 2FA (Gelecek)
+  twoFactorEnabled: boolean;
+  twoFactorSecret?: string;
+  
+  // Profil
+  profilePicture?: string;
+  bio?: string;
+  preferences?: {
+    language?: 'en' | 'es' | 'fr' | 'tr';
+    themeMode?: 'light' | 'dark';
+    notificationsEnabled?: boolean;
+    timezone?: string;
+  };
+  
+  // Erişim İzinleri
+  permissions: Array<{
+    module: string;
+    accessLevel: 'read' | 'write' | 'delete';
+  }>;
+  
+  // Metodlar
+  comparePassword(candidatePassword: string): Promise<boolean>;
+  incrementFailedLogins(): Promise<void>;
+  clearPasswordResetToken(): Promise<void>;
+  incrementTokenVersion(): Promise<void>;
+  updateLastLogin(ip: string): Promise<void>;
+}
+```
 
-resetPassword: Şifre sıfırlama token'ı ile yeni şifre belirler.
+### Token Model
 
-2. Service Katmanı (services/auth.service.ts)
-   İş mantığını ve kuralları yönetir. (Örnekler)
+```typescript
+interface IToken {
+  _id: ObjectId;
+  user: ObjectId;
+  tokenHash: string;               // Hashlenmiş refresh token
+  expiresAt: Date;
+  isRevoked: boolean;
+  ip: string;
+  userAgent: string;
+  lastUsedAt: Date;
+  createdAt: Date;
+}
+```
 
-Kayıt işlemi sırasında email kontrolü ve token oluşturma.
+---
 
-Şifre kontrolü, token revizyonları ve güvenlik adımları.
+## 🔄 İş Akışları
 
-Kullanıcının giriş yaptığı cihazları ve IP'leri izleme.
+### 1. Kayıt (Register) Akışı
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Register   │────▶│  Email Kontrolü │────▶│  Şifre Hash     │
+│  Request    │     │  (Duplicate?)   │     │  (bcrypt)       │
+└─────────────┘     └─────────────────┘     └─────────────────┘
+                                                    │
+                                                    ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Kullanıcı      │◀────│  Email Gönder   │◀────│  User Kaydet    │
+│  Onay Bekle     │     │  (Verification) │     │  emailVerified: │
+└─────────────────┘     └─────────────────┘     │  false          │
+                                                └─────────────────┘
+```
+
+### 2. Giriş (Login) Akışı
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Login      │────▶│  Şifre Kontrol  │────▶│  Email Verified?│
+│  Request    │     │  (bcrypt)       │     │                 │
+└─────────────┘     └─────────────────┘     └─────────────────┘
+                           │                        │
+                    ❌ Hatalı                  ❌ Doğrulanmamış
+                           │                        │
+                           ▼                        ▼
+               ┌─────────────────┐      ┌─────────────────┐
+               │  Failed Login   │      │  Yeniden Email  │
+               │  Counter++      │      │  Gönder         │
+               └─────────────────┘      └─────────────────┘
+                                                    
+                                            ✅ Başarılı
+                                                    │
+                                                    ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Cookie'lere    │◀────│  Token Üret     │◀────│  Eski Tokenları │
+│  Token Yaz      │     │  Access+Refresh │     │  İptal Et       │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
+### 3. Token Yenileme (Refresh) Akışı
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Refresh Token  │────▶│  JWT Verify     │────▶│  Token Version  │
+│  (Cookie'den)   │     │                 │     │  Kontrol        │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                            ┌─────────────────┐
+                                            │  IP/UserAgent   │
+                                            │  Kontrol        │
+                                            │  (Şüpheli?)     │
+                                            └─────────────────┘
+                                                    │
+                                    ┌───────────────┼───────────────┐
+                                    │               │               │
+                              ✅ Normal       ⚠️ Farklı       🚨 3+ Cihaz
+                                    │           Cihaz              │
+                                    ▼               │               ▼
+                        ┌─────────────────┐        │    ┌─────────────────┐
+                        │  Yeni Token     │        │    │  Tüm Tokenları  │
+                        │  Oluştur        │        │    │  İptal Et       │
+                        └─────────────────┘        │    └─────────────────┘
+                                                   ▼
+                                        ┌─────────────────┐
+                                        │  Log + İzleme   │
+                                        └─────────────────┘
+```
+
+---
+
+## 📡 API Endpoints
+
+### Auth Routes (`/api/auth`)
+
+| Method | Endpoint | Açıklama | Auth |
+|--------|----------|----------|------|
+| `POST` | `/register` | Yeni kullanıcı kaydı | - |
+| `GET` | `/verify-email?token=xxx` | E-posta doğrulama | - |
+| `POST` | `/login` | Kullanıcı girişi | - |
+| `POST` | `/logout` | Oturumu kapat | Required |
+| `POST` | `/refresh` | Token yenileme | - |
+| `POST` | `/forgot-password` | Şifre sıfırlama isteği | - |
+| `POST` | `/reset-password` | Yeni şifre belirleme | - |
+| `PUT` | `/profile` | Profil güncelleme | Required |
+
+### Profile Routes (`/api/profile`)
+
+| Method | Endpoint | Açıklama | Auth |
+|--------|----------|----------|------|
+| `GET` | `/me` | Kullanıcı profili | Required |
+| `PUT` | `/me` | Profil güncelle | Required |
+
+---
+
+## 🔧 Service Metodları
+
+### AuthService
+
+| Metod | Parametre | Dönüş | Açıklama |
+|-------|-----------|-------|----------|
+| `registerUser` | `RegisterDTO` | `IUser` | Yeni kullanıcı oluştur |
+| `loginUser` | `LoginDTO, clientInfo` | `{ user, accessToken, refreshToken }` | Giriş yap |
+| `logoutUser` | `refreshToken` | `void` | Token iptal et |
+| `refreshAccessToken` | `refreshToken, clientInfo` | `{ accessToken, refreshToken }` | Token yenile |
+| `requestPasswordReset` | `email` | `{ success, message }` | Şifre sıfırlama emaili |
+| `resetPassword` | `token, newPassword` | `{ success }` | Yeni şifre belirle |
+| `getProfileById` | `userId` | `IUser` | Profil bilgisi |
+| `updateUserProfile` | `userId, UpdateProfileDTO` | `IUser` | Profil güncelle |
+
+---
+
+## 🔒 Güvenlik Mekanizmaları
+
+### 1. Şifre Güvenliği
+```typescript
+// Şifre hashleme (pre-save hook)
+const saltRounds = 12;
+const salt = await bcrypt.genSalt(saltRounds);
+this.password = await bcrypt.hash(this.password, salt);
+```
+
+### 2. Token Güvenliği
+
+| Özellik | Değer | Açıklama |
+|---------|-------|----------|
+| Access Token Süresi | 10 dakika | Kısa süreli erişim |
+| Refresh Token Süresi | 7 gün | Uzun süreli oturum |
+| Token Version | Artırılabilir | Tüm tokenları geçersiz kılar |
+| Token Hashing | SHA-256 | DB'de hashlenmiş saklanır |
+
+### 3. Giriş Korumaları
+
+| Koruma | Limit | Aksiyon |
+|--------|-------|---------|
+| Başarısız Giriş | 5 deneme | Hesap kilitleme |
+| Kilit Süresi | 30 dakika | Otomatik açılır |
+| Şüpheli Aktivite | 3 farklı cihaz | Tüm tokenlar iptal |
+
+### 4. Cookie Ayarları
+
+```typescript
+res.cookie('access_token', accessToken, {
+  httpOnly: true,
+  secure: process.env.COOKIE_SECURE === 'true',
+  sameSite: 'strict',  // Production'da
+  maxAge: 10 * 60 * 1000,  // 10 dakika
+  path: '/',
+});
+```
+
+---
+
+## ⚙️ Konfigürasyon
+
+### Çevre Değişkenleri
+
+| Değişken | Açıklama |
+|----------|----------|
+| `JWT_ACCESS_SECRET` | Access token imzalama anahtarı |
+| `JWT_REFRESH_SECRET` | Refresh token imzalama anahtarı |
+| `JWT_ACCESS_EXPIRES` | Access token süresi (örn: '10m') |
+| `JWT_REFRESH_EXPIRES` | Refresh token süresi (örn: '7d') |
+| `COOKIE_SECURE` | HTTPS cookie zorunluluğu |
+| `EMAIL_HOST` | SMTP sunucu adresi |
+| `EMAIL_USER` | SMTP kullanıcı adı |
+| `EMAIL_PASS` | SMTP şifre |
+
+---
+
+## 🧪 Test Senaryoları
+
+| Senaryo | Açıklama | Beklenen Sonuç |
+|---------|----------|----------------|
+| Başarılı Kayıt | Geçerli email + şifre | 201 + Doğrulama emaili |
+| Duplicate Email | Var olan email | 400 Email in use |
+| Doğrulanmamış Giriş | emailVerified: false | 403 + Yeni email |
+| Başarısız Giriş | Yanlış şifre (5x) | Hesap kilitleme |
+| Token Yenileme | Geçerli refresh token | Yeni token çifti |
+| Şüpheli Aktivite | 3 farklı IP/cihaz | Tüm tokenlar iptal |
+
+---
+
+## 📝 Versiyon Notları
+
+### v2.0 (Güncel)
+- Token version ile invalidation
+- Çoklu cihaz takibi
+- Şüpheli aktivite algılama
+- IP/UserAgent logging
+- Gelişmiş profil yönetimi
+
+### v1.0
+- Temel auth akışları
+- JWT token yönetimi
+- E-posta doğrulama
+- Şifre sıfırlama
+
+---
+
+## 🔗 İlgili Dokümantasyon
+
+- [Middlewares - auth.ts](../../middlewares/auth.ts)
+- [Utils - tokenUtils.ts](../../utils/tokenUtils.ts)
+- [Utils - emailUtils.ts](../../utils/emailUtils.ts)
 
 Refresh token çalınması veya kötüye kullanımı durumunda güvenlik önlemleri.
 

@@ -1,11 +1,11 @@
 
-import { CandidateRepository } from '../repositories/candidate.repository';
+import { PublicCandidateRepository } from '../repositories/public-candidate.repository';
 import { InterviewRepository } from '../../interview/repositories/interview.repository';
 import { ApplicationRepository } from '../repositories/application.repository';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
 import { IInterview, InterviewStatus } from '../../interview/models/interview.model';
-import { IApplication, IApplicationResponse } from '../models/application.model'; // Dikkat, path proje yapınıza göre değişebilir
+import { IApplication, IApplicationResponse } from '../models/application.model';
 import { CreateApplicationDTO } from '../dtos/createApplication.dto';
 import { VerifyOtpDTO, VerifyOtpResponseDTO } from '../dtos/otpVerify.dto';
 import { generateRandomCode } from '../../../utils/stringUtils';
@@ -13,20 +13,27 @@ import { Types } from 'mongoose';
 import { GetPublicInterviewDTO } from '../dtos/publicInterview.dto';
 import { generateCandidateToken } from '../../../utils/tokenUtils';
 import { UpdateCandidateDTO } from '../dtos/updateCandidate.dto';
-import { VideoResponseDTO } from '../dtos/videoResponse.dto'; // ✅ Yeni DTO
-import { PersonalityTestResponseDTO } from '../dtos/personalityTest.dto'; // ✅ Yeni DTO
-import { aiAnalysisQueue } from '../../../utils/bullmq'; // utils/bullmq.ts dosyasından
+import { VideoResponseDTO } from '../dtos/videoResponse.dto';
+import { PersonalityTestResponseDTO } from '../dtos/personalityTest.dto';
+import { aiAnalysisQueue, aiAnalysisStartQueue } from '../../../utils/bullmq';
+import VideoResponseModel from '../../video/models/videoResponse.model';
+import InterviewModel from '../../interview/models/interview.model';
+// Candidate Pool Sync
+import CandidatePoolService from '../../candidates/services/candidate.service';
 
 
 
 export class CandidateService {
   private interviewRepository: InterviewRepository;
   private applicationRepository: ApplicationRepository;
-  private candidateRepository: CandidateRepository;
+  private candidateRepository: PublicCandidateRepository;
+  private candidatePoolService: typeof CandidatePoolService;
+
   constructor() {
     this.interviewRepository = new InterviewRepository();
     this.applicationRepository = new ApplicationRepository();
-    this.candidateRepository = new CandidateRepository();
+    this.candidateRepository = new PublicCandidateRepository();
+    this.candidatePoolService = CandidatePoolService;
   }
 
   public async getPublicInterview(interviewId: string): Promise<GetPublicInterviewDTO> {
@@ -68,6 +75,11 @@ export class CandidateService {
 
   /**
    * Aday form verilerini gönderir -> Uygulama kaydı oluşturulur -> OTP kodu oluşturup SMS gönderilir.
+   * 
+   * 📋 FAZ 2.1 GÜNCELLEME:
+   * - Önce ensureCandidateIdentity ile Candidate oluşturulur/bulunur
+   * - Application.candidateId set edilir
+   * - linkApplication ile ilişki kurulur
    */
   public async createApplication(data: CreateApplicationDTO): Promise<IApplication> {
     const interview = await this.interviewRepository.getInterviewById(data.interviewId);
@@ -94,10 +106,21 @@ export class CandidateService {
       );
   }
   
+    // ✅ FAZ 2.1: Önce Candidate identity'yi sağla
+    const candidate = await this.candidatePoolService.ensureCandidateIdentity(
+      data.email,
+      {
+        name: data.name,
+        surname: data.surname,
+        phone: data.phone
+      }
+    );
+
     const otpCode = generateRandomCode(6);
 
     const applicationData: Partial<IApplication> = {
       interviewId: interview._id as Types.ObjectId,
+      candidateId: candidate._id, // ✅ FAZ 1.1: candidateId set edildi
       candidate: {
         name: data.name,
         surname: data.surname,
@@ -112,11 +135,19 @@ export class CandidateService {
 
     const createdApp = await this.candidateRepository.createApplication(applicationData);
 
+    // ✅ FAZ 2.1: linkApplication ile ilişkiyi kur
+    await this.candidatePoolService.linkApplication(
+      candidate._id,
+      createdApp._id as Types.ObjectId,
+      interview._id as Types.ObjectId,
+      interview.title
+    ).catch(err => console.error('[CandidatePool] Link error:', err));
+
     console.log(`SMS sent to ${data.phone} with code ${otpCode}`);
 
     return {
       ...createdApp.toObject(),
-      personalityTestRequired: interview.personalityTestId ? true : false,  // ✅ Kişilik testi bilgisi eklendi
+      personalityTestRequired: interview.personalityTestId ? true : false,
   };
   }
 
@@ -226,19 +257,33 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
   }
   /**
      * ✅ YENİ METOT: Aday Video Yanıtını Kaydeder ve AI Analizini Tetikler
+     * Güncellenmiş versiyon: Yeni AI Server API'si ile uyumlu
      */
     public async saveVideoResponse(data: VideoResponseDTO, applicationId: string): Promise<IApplication> {
         const { questionId, videoUrl, duration, textAnswer, aiAnalysisRequired } = data;
 
-        // ... (Kodun Başvuru Bulma ve Tekrarlı Yanıt Kontrolü kısımları aynı kalır)
+        // 1) Başvuruyu bul
         const application = await this.candidateRepository.getApplicationById(applicationId);
         if (!application) {
             throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
         }
 
-        // 1) Tekrarlı yanıt kontrolü (Aynı kalır)
+        // 2) Mülakatı getir (soru sayısını öğrenmek için)
+        const interview = await InterviewModel.findById(application.interviewId);
+        if (!interview) {
+            throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+        }
 
-        // 2) Yeni yanıtı Application Model'e ekle (Aynı kalır)
+        // 3) VideoResponse modelini oluştur (Yeni API için gerekli)
+        const videoResponse = await VideoResponseModel.create({
+            applicationId: new Types.ObjectId(applicationId),
+            questionId: new Types.ObjectId(questionId),
+            videoUrl,
+            duration,
+            status: 'pending',
+        });
+
+        // 4) Yeni yanıtı Application Model'e de ekle (geriye uyumluluk)
         const newResponse: IApplicationResponse = {
             questionId: new Types.ObjectId(questionId),
             videoUrl,
@@ -247,38 +292,35 @@ public async resendOtp(applicationId: string): Promise<{ expiresAt: Date }> {
         };
         application.responses.push(newResponse);
 
-        // 3) Application durumunu güncelle
-        // *Düzeltme:* Video yanıtları biriktikçe durum 'in_progress' olmalı, ilk video yüklemesinden sonra analiz bekleme durumuna geçebiliriz.
-        // Tüm videolar yüklenince durum 'awaiting_ai_analysis' olarak ayarlanmalıdır.
-        // Ancak bu akışta videoyu kaydettiğimiz an analizi tetiklediğimiz için 'awaiting_ai_analysis' doğru bir ara durumdur.
-        application.status = 'awaiting_ai_analysis'; 
+        // 5) Yüklenen video sayısını kontrol et
+        const totalQuestions = interview.questions.length;
+        const uploadedVideos = await VideoResponseModel.countDocuments({ 
+            applicationId: new Types.ObjectId(applicationId) 
+        });
+
+        // 6) Tüm videolar yüklendi mi?
+        if (uploadedVideos >= totalQuestions) {
+            // Tüm videolar yüklendi - batch analizi başlat
+            application.status = 'awaiting_ai_analysis';
+            
+            if (aiAnalysisRequired !== false) {
+                // YENİ API: Batch analiz kuyruğuna ekle
+                await aiAnalysisStartQueue.add('startAnalysis', { 
+                    applicationId: applicationId,
+                });
+                
+                console.log(`✅ [BullMQ] Tüm videolar yüklendi (${uploadedVideos}/${totalQuestions}). Batch AI analizi başlatılıyor.`);
+            }
+        } else {
+            // Henüz tüm videolar yüklenmedi
+            application.status = 'awaiting_video_responses';
+            console.log(`📹 Video kaydedildi (${uploadedVideos}/${totalQuestions}). Analiz için diğer videolar bekleniyor.`);
+        }
 
         const updatedApplication = await this.candidateRepository.updateApplicationById(applicationId, application);
         
         if (!updatedApplication) {
             throw new AppError('Video yanıtı kaydedilemedi.', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
-        }
-
-        // 4) 🚀 KRİTİK ADIM: AI Analizi için kuyruğa iş ekle
-        if (aiAnalysisRequired !== false) {
-            
-            // Kuyruğa eklenecek iş için video yanıtının ID'sini (veya benzer bir benzersiz ID'yi) bulmalıyız.
-            // Bu akışta VideoResponseModel kullanmadığınız için, Application içerisindeki responses dizisinin
-            // hangi öğesinin analiz edileceğini belirtmek amacıyla, QuestionID'yi kullanacağız.
-
-            await aiAnalysisQueue.add('analyzeVideo', { 
-                videoResponseId: newResponse.questionId.toString(), // 🚨 DİKKAT: Normalde buraya VideoResponse Model'in ID'si gelmeliydi.
-                                                                    // Ancak VideoResponse ayrı bir model olarak kaydedilmediği için,
-                                                                    // Worker'ın Application'ı bulmasını sağlamak üzere questionId'yi kullanıyoruz.
-                                                                    // Service katmanında VideoResponse Model'i oluşturmak daha doğru olurdu.
-                                                                    // Şimdilik Question ID üzerinden devam edelim:
-                                                                    
-                questionId: newResponse.questionId.toString(), 
-                applicationId: applicationId,
-            }); 
-            
-            console.log(`✅ [BullMQ] AI Analizi için iş kuyruğa eklendi. Question ID: ${newResponse.questionId}`);
-
         }
 
         return updatedApplication;

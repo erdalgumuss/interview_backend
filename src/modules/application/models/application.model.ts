@@ -91,16 +91,45 @@ export interface IApplication extends Document {
   _id: mongoose.Types.ObjectId;
   id: string;
   interviewId: mongoose.Types.ObjectId;
+  
+  // ✅ NEW: Foreign key to Candidate - Single Source of Truth
+  candidateId?: mongoose.Types.ObjectId;
+  
+  /**
+   * @deprecated Bu alan FAZ 6.2'de kaldırılacak.
+   * Yeni kod candidateId üzerinden Candidate modülüne erişmeli.
+   * Sadece geriye uyumluluk ve migration için korunuyor.
+   */
   candidate: ICandidateProfile;
+  
+  /**
+   * @deprecated Bu alanlar Candidate modülüne taşınacak.
+   * Application sadece interview execution context'i tutar.
+   */
   education: ICandidateEducation[];
+  /**
+   * @deprecated Bu alanlar Candidate modülüne taşınacak.
+   */
   experience: ICandidateExperience[];
+  /**
+   * @deprecated Bu alanlar Candidate modülüne taşınacak.
+   */
   skills: ICandidateSkills;
+  /**
+   * @deprecated Bu alanlar Candidate modülüne taşınacak.
+   */
   documents: ICandidateDocuments;
-    status: ApplicationStatus; 
+  
+  status: ApplicationStatus; 
   personalityTestResults?: IPersonalityTestResults;
   aiAnalysisResults: mongoose.Types.ObjectId[];
   latestAIAnalysisId?: mongoose.Types.ObjectId;
+  
+  /**
+   * @deprecated FAZ 3.1'de kaldırılacak. AIAnalysis modülü source of truth.
+   */
   generalAIAnalysis?: IGeneralAIAnalysis;
+  
   allowRetry: boolean;
   maxRetryAttempts?: number;
   retryCount?: number;
@@ -115,7 +144,14 @@ export interface IApplication extends Document {
 const ApplicationSchema = new Schema<IApplication>(
   {
     interviewId: { type: mongoose.Schema.Types.ObjectId, ref: 'Interview', required: true },
+    
+    // ✅ NEW: Foreign key to Candidate - Single Source of Truth
+    candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate', index: true },
 
+    /**
+     * @deprecated Bu alan FAZ 6.2'de kaldırılacak.
+     * Yeni kod candidateId üzerinden Candidate modülüne erişmeli.
+     */
     candidate: {
       name: { type: String, required: true },
       surname: { type: String, required: true },
@@ -127,6 +163,7 @@ const ApplicationSchema = new Schema<IApplication>(
       kvkkConsent: { type: Boolean, default: false },
     },
 
+    // @deprecated - Bu alanlar Candidate modülüne taşınacak (FAZ 6.2)
     education: [
       {
         school: String,
@@ -135,6 +172,7 @@ const ApplicationSchema = new Schema<IApplication>(
       },
     ],
 
+    // @deprecated - Bu alanlar Candidate modülüne taşınacak (FAZ 6.2)
     experience: [
       {
         company: String,
@@ -144,12 +182,14 @@ const ApplicationSchema = new Schema<IApplication>(
       },
     ],
 
+    // @deprecated - Bu alanlar Candidate modülüne taşınacak (FAZ 6.2)
     skills: {
       technical: { type: [String], default: [] },
       personal: { type: [String], default: [] },
       languages: { type: [String], default: [] },
     },
 
+    // @deprecated - Bu alanlar Candidate modülüne taşınacak (FAZ 6.2)
     documents: {
       resume: { type: String, default: '' },
       certificates: { type: [String], default: [] },
@@ -187,6 +227,7 @@ const ApplicationSchema = new Schema<IApplication>(
     aiAnalysisResults: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AIAnalysis' }],
     latestAIAnalysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'AIAnalysis' },
 
+    // @deprecated FAZ 3.1 - AIAnalysis modülü source of truth olacak
     generalAIAnalysis: {
       overallScore: Number,
       technicalSkillsScore: Number,
@@ -226,7 +267,8 @@ const ApplicationSchema = new Schema<IApplication>(
 );
 
 ApplicationSchema.index({ interviewId: 1 });
-ApplicationSchema.index({ 'candidate.email': 1 });
+ApplicationSchema.index({ candidateId: 1 }); // ✅ NEW: candidateId index
+ApplicationSchema.index({ 'candidate.email': 1 }); // @deprecated - migration sonrası kaldırılacak
 
 const ApplicationModel = mongoose.model<IApplication>('Application', ApplicationSchema);
 export default ApplicationModel;

@@ -6,14 +6,35 @@ import ApplicationModel, { IApplication } from '../models/application.model'; //
 export class ApplicationRepository {
  
   /**
-   * ID'ye göre başvuru getir (detay).
+   * ✅ GÜNCELLENMIŞ METOT (FAZ 5.4.1): ID'ye göre başvuru getir (detay).
+   * 
+   * 📋 FAZ 5.4.1: HR için zengin detay
+   * - interviewId -> title, questions (soru metni, sıra, süre)
+   * - aiAnalysisResults -> tüm soru bazlı analizler
+   * - latestAIAnalysisId -> en son analiz
    */
   public async getApplicationById(applicationId: string): Promise<IApplication | null> {
     return ApplicationModel
       .findById(applicationId)
-      .populate('interviewId', 'title status expirationDate') 
-      .populate('aiAnalysisResults')
-      .populate('latestAIAnalysisId') // Eklenebilir
+      // FAZ 5.4.1: Interview detayları - sorular dahil
+      .populate({
+        path: 'interviewId',
+        select: 'title status expirationDate questions',
+        populate: {
+          path: 'questions',
+          select: 'questionText order duration expectedAnswer keywords'
+        }
+      })
+      // FAZ 5.4.1: Tüm AI analiz sonuçları (soru bazlı)
+      .populate({
+        path: 'aiAnalysisResults',
+        select: 'questionId overallScore communicationScore technicalSkillsScore problemSolvingScore personalityMatchScore transcriptionText strengths improvementAreas recommendation pipelineStatus evaluationResult faceScores voiceScores analyzedAt'
+      })
+      // FAZ 5.4.2: En son AI analizi
+      .populate({
+        path: 'latestAIAnalysisId',
+        select: 'overallScore communicationScore technicalSkillsScore problemSolvingScore personalityMatchScore strengths improvementAreas recommendation analyzedAt evaluationResult'
+      })
       .exec();
   }
 
@@ -115,8 +136,11 @@ export class ApplicationRepository {
 
 
   /**
-   * ✅ YENİ METOT: Dinamik Filtrelerle ve Sayfalama ile Başvuruları Getir
-   * Projenin en karmaşık sorgularından biri.
+   * ✅ GÜNCELLENMIŞ METOT (FAZ 5.3): Dinamik Filtrelerle ve Sayfalama ile Başvuruları Getir
+   * 
+   * 📋 FAZ 5.3.1: Default liste = TÜM application'lar (AI filtresi varsayılan değil)
+   * 📋 FAZ 5.3.2: analysisStatus filtresi: 'all' | 'completed' | 'pending'
+   * 📋 FAZ 5.3.3: aiScoreMin SADECE analizli application'lar için çalışır
    */
   public async getFilteredApplications(
     filters: any,
@@ -125,7 +149,7 @@ export class ApplicationRepository {
     limit: number
   ): Promise<{ applications: IApplication[], total: number }> {
     
-    // 1) Temel sorgu (match) objesi oluşturuluyor
+    // 1) Temel sorgu (match) objesi - DEFAULT: Sadece yetki + interview filtresi
     const match: any = {};
     
     // NOT: InterviewRepository'den kullanıcının sahip olduğu tüm mülakat ID'leri çekilmelidir.
@@ -137,7 +161,7 @@ export class ApplicationRepository {
         match.interviewId = new Types.ObjectId(filters.interviewId as string);
     }
     
-    // B) Durum Filtresi
+    // B) Durum Filtresi (Application Status)
     if (filters.status && filters.status !== 'all') {
         // Durum filtresi Array veya tek değer olabilir
         if (Array.isArray(filters.status)) {
@@ -157,11 +181,40 @@ export class ApplicationRepository {
         ];
     }
     
-    // D) AI Skoru Filtresi (Örn: aiScoreMin=70)
-    if (filters.aiScoreMin) {
+    // =========================================
+    // FAZ 5.3.2: Analysis Status Filtresi
+    // =========================================
+    // analysisStatus: 'all' | 'completed' | 'pending'
+    // Default: 'all' (tüm application'lar listelenir)
+    const analysisStatus = filters.analysisStatus || 'all';
+    
+    if (analysisStatus === 'completed') {
+        // Sadece AI analizi TAMAMLANMIŞ olanlar
+        match['generalAIAnalysis.overallScore'] = { $exists: true, $ne: null };
+    } else if (analysisStatus === 'pending') {
+        // Sadece AI analizi BEKLEYEN olanlar
+        match.$and = match.$and || [];
+        match.$and.push({
+            $or: [
+                { 'generalAIAnalysis.overallScore': { $exists: false } },
+                { 'generalAIAnalysis.overallScore': null }
+            ]
+        });
+    }
+    // analysisStatus === 'all' ise hiçbir AI filtresi eklenmez (FAZ 5.3.1)
+
+    // =========================================
+    // FAZ 5.3.3: AI Skor Filtresi (Güvenli)
+    // =========================================
+    // aiScoreMin SADECE analysisStatus !== 'pending' ise çalışır
+    if (filters.aiScoreMin !== undefined && analysisStatus !== 'pending') {
         const minScore = parseInt(filters.aiScoreMin as string);
-        if (!isNaN(minScore)) {
-            match['generalAIAnalysis.overallScore'] = { $gte: minScore };
+        if (!isNaN(minScore) && minScore > 0) {
+            // aiScoreMin kullanıldığında otomatik olarak sadece analizli olanları filtrele
+            match['generalAIAnalysis.overallScore'] = { 
+                ...match['generalAIAnalysis.overallScore'],
+                $gte: minScore 
+            };
         }
     }
 
@@ -173,9 +226,7 @@ export class ApplicationRepository {
         .skip((page - 1) * limit)
         .limit(limit)
         .sort({ createdAt: -1 })
-        // Populate gerekli ise buraya eklenir
-        .populate('interviewId', 'title') // Mülakat başlığını getir
-        .select('+generalAIAnalysis.overallScore') // Skoru döndürmek için seç
+        .populate('interviewId', 'title')
         .exec();
 
     return { applications, total };

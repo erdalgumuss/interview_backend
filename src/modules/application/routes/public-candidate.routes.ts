@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import candidateController from '../controllers/candidate.controller';
+import candidateController from '../controllers/public-candidate.controller';
 import { asyncHandler } from '../../../middlewares/asyncHandler';
 import { authenticateCandidate } from '../../../middlewares/auth';
 import { rateLimitMiddleware } from '../../../middlewares/rateLimitMiddleware';

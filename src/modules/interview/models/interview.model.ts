@@ -6,7 +6,7 @@ import mongoose, { Schema, Document } from 'mongoose';
  * Her bir soru için kullanılacak interface
  */
 export interface IInterviewQuestion {
-    _id?: mongoose.Types.ObjectId; // Alt şemada _id:false yaptığımız için opsiyonel
+    _id?: mongoose.Types.ObjectId; 
     questionText: string;
     expectedAnswer: string;
     explanation?: string;
@@ -14,22 +14,46 @@ export interface IInterviewQuestion {
     order: number;
     duration: number;
     aiMetadata: {
-        complexityLevel: 'low' | 'medium' | 'high';
+        complexityLevel: 'low' | 'medium' | 'high' | 'intermediate' | 'advanced';
         requiredSkills: string[];
         keywordMatchScore?: number;
     };
 }
+
+/**
+ * Pozisyon bilgileri - AI Server için gerekli
+ */
+export interface IPosition {
+    title: string;
+    department?: string;
+    competencyWeights?: {
+        technical?: number;
+        communication?: number;
+        problem_solving?: number;
+    };
+    description?: string;
+}
+
 export enum InterviewStatus {
     ACTIVE = 'active',
     COMPLETED = 'completed',
     PUBLISHED = 'published',
     DRAFT = 'draft',
     INACTIVE = 'inactive'
-  }
+}
+
+/**
+ * Mülakat tipi enum
+ */
+export enum InterviewType {
+    ASYNC_VIDEO = 'async-video',
+    LIVE_VIDEO = 'live-video',
+    AUDIO_ONLY = 'audio-only',
+    TEXT_BASED = 'text-based'
+}
   
 /**
  * Asıl Interview dokümanı için kullanılacak interface
- * timestamps: true kullanıldığı için createdAt & updatedAt opsiyonel tutulabilir.
  */
 export interface IInterview extends Document {
     title: string;
@@ -39,6 +63,13 @@ export interface IInterview extends Document {
         userId: mongoose.Types.ObjectId;
     };
     status: InterviewStatus;
+    
+    // Mülakat tipi
+    type?: InterviewType;
+    
+    // Pozisyon bilgileri
+    position?: IPosition;
+    
     personalityTestId?: mongoose.Types.ObjectId; // Ref to PersonalityTest
     stages: {
         personalityTest: boolean;
@@ -49,16 +80,22 @@ export interface IInterview extends Document {
         expirationDate?: Date;
     };
     questions: IInterviewQuestion[];
-    createdAt?: Date;
-    updatedAt?: Date;
+    
+    // ✅ EKLENDİ: AI Analiz Ayarları (Interface'de vardı, Schema'ya bağlanacak)
     aiAnalysisSettings: {
         useAutomaticScoring: boolean;
         gestureAnalysis: boolean;
         speechAnalysis: boolean;
         eyeContactAnalysis: boolean;
         tonalAnalysis: boolean;
-        keywordMatchScore: number; // Global ağırlık/ayar için
+        keywordMatchScore: number;
     };
+
+    // ✅ EKLENDİ: Soft delete için gerekli alan (Repository kullanıyor)
+    deletedAt?: Date | null;
+
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 /**
@@ -75,7 +112,7 @@ const InterviewQuestionSchema = new Schema<IInterviewQuestion>(
         aiMetadata: {
             complexityLevel: {
                 type: String,
-                enum: ['low', 'medium', 'high'],
+                enum: ['low', 'medium', 'high', 'intermediate', 'advanced'],
                 required: true,
             },
             requiredSkills: { type: [String], required: true },
@@ -83,9 +120,38 @@ const InterviewQuestionSchema = new Schema<IInterviewQuestion>(
         },
     },
     {
-        _id: false, // Alt doküman olduğu için ayrı bir _id oluşturulmasını istemeyebilirsiniz.
+        _id: false, 
     }
 );
+
+/**
+ * Position alt şeması
+ */
+const PositionSchema = new Schema<IPosition>(
+    {
+        title: { type: String, required: true },
+        department: { type: String },
+        competencyWeights: {
+            technical: { type: Number, min: 0, max: 100 },
+            communication: { type: Number, min: 0, max: 100 },
+            problem_solving: { type: Number, min: 0, max: 100 },
+        },
+        description: { type: String },
+    },
+    { _id: false }
+);
+
+/**
+ * ✅ TAŞINDI: AiAnalysisSettingsSchema (InterviewSchema içinde kullanabilmek için yukarı alındı)
+ */
+const AiAnalysisSettingsSchema = new Schema({
+    useAutomaticScoring: { type: Boolean, default: true },
+    gestureAnalysis: { type: Boolean, default: true },
+    speechAnalysis: { type: Boolean, default: true },
+    eyeContactAnalysis: { type: Boolean, default: false },
+    tonalAnalysis: { type: Boolean, default: false },
+    keywordMatchScore: { type: Number, default: 0 }, 
+}, { _id: false });
 
 /**
  * Asıl Interview şeması
@@ -107,9 +173,17 @@ const InterviewSchema = new Schema<IInterview>(
             enum: Object.values(InterviewStatus),
             default: InterviewStatus.DRAFT,
         },
+        // Mülakat tipi
+        type: {
+            type: String,
+            enum: Object.values(InterviewType),
+            default: InterviewType.ASYNC_VIDEO,
+        },
+        // Pozisyon bilgileri
+        position: PositionSchema,
         personalityTestId: {
             type: mongoose.Schema.Types.ObjectId,
-            //: 'PersonalityTest',
+            //ref: 'PersonalityTest',
         },
         stages: {
             personalityTest: { type: Boolean, default: false },
@@ -120,19 +194,19 @@ const InterviewSchema = new Schema<IInterview>(
             expirationDate: { type: Date },
         },
         questions: [InterviewQuestionSchema],
+
+        // ✅ EKLENDİ: AI Analiz Ayarları Şemaya Bağlandı
+        aiAnalysisSettings: {
+            type: AiAnalysisSettingsSchema,
+            default: () => ({}), // Boş obje olarak başlat
+        },
+
+        // ✅ EKLENDİ: Soft Delete Alanı
+        deletedAt: { type: Date, default: null },
     },
-    
     {
-        timestamps: true // createdAt & updatedAt otomatik olarak eklenecek
+        timestamps: true 
     }
-    
 );
-const AiAnalysisSettingsSchema = new Schema({
-    useAutomaticScoring: { type: Boolean, default: true },
-    gestureAnalysis: { type: Boolean, default: true },
-    speechAnalysis: { type: Boolean, default: true },
-    eyeContactAnalysis: { type: Boolean, default: false },
-    tonalAnalysis: { type: Boolean, default: false },
-    keywordMatchScore: { type: Number, default: 0 }, // 0: Disabled, 1: Enabled veya ağırlık
-}, { _id: false });
+
 export default mongoose.model<IInterview>('Interview', InterviewSchema);

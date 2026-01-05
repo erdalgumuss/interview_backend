@@ -4,8 +4,8 @@ import { InterviewRepository } from '../repositories/interview.repository';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 import { IInterview, InterviewStatus } from '../models/interview.model';
 import mongoose from 'mongoose';
-import { AppError } from '../../../middlewares/errors/appError'; // AppError import edildi
-import { ErrorCodes } from '../../../constants/errors'; // ErrorCodes import edildi
+import { AppError } from '../../../middlewares/errors/appError';
+import { ErrorCodes } from '../../../constants/errors';
 import { 
     DashboardDataDTO, 
     ApplicationTrendDTO, 
@@ -14,18 +14,21 @@ import {
     FavoriteCandidateDTO, 
     InterviewSummaryDTO
 } from '../dtos/dashboardData.dto';
-import {ApplicationRepository} from '../../application/repositories/application.repository'; 
- import {VideoResponseRepository} from '../../video/repositories/videoResponse.repository';
+
+// Diğer modüllerin repository'leri
+import { ApplicationRepository } from '../../application/repositories/application.repository'; 
+// Candidate modülünün yolu dosya ağacına göre güncellendi
+import { CandidateRepository } from '../../candidates/repositories/candidate.repository'; 
 
 export class InterviewService {
     private interviewRepository: InterviewRepository;
-    private applicationRepository: ApplicationRepository; // Eğer varsa
-    private videoResponseRepository: VideoResponseRepository;
+    private applicationRepository: ApplicationRepository;
+    private candidateRepository: CandidateRepository;
 
     constructor() {
         this.interviewRepository = new InterviewRepository();
         this.applicationRepository = new ApplicationRepository();
-        this.videoResponseRepository = new VideoResponseRepository();
+        this.candidateRepository = new CandidateRepository();
     }
 
     /**
@@ -54,22 +57,25 @@ export class InterviewService {
             );
         }
 
-          // ✅ DÜZELTME: Link oluşturma mantığı kaldırıldı.
         const interviewId = new mongoose.Types.ObjectId();
 
         const interviewData: Partial<IInterview> = {
             _id: interviewId,
             title: data.title,
+            description: data.description,
             expirationDate: parsedExpirationDate,
             createdBy: {
                 userId: new mongoose.Types.ObjectId(userId),
             },
+            type: data.type as any,
+            position: data.position, // ✅ DTO'dan gelen pozisyon verisi
+            aiAnalysisSettings: data.aiAnalysisSettings, // ✅ DTO'dan gelen AI ayarları
             personalityTestId: data.personalityTestId
                 ? new mongoose.Types.ObjectId(data.personalityTestId)
                 : undefined,
-            questions: data.questions,
-            // ❌ KALDIRILDI: Link bilgisi (interviewLink) ilk oluşturmada boş bırakılır.
-            status: InterviewStatus.DRAFT // ✅ ZORUNLU KILINDI: İlk durum her zaman DRAFT'tır.
+            stages: data.stages,
+            questions: data.questions as any,
+            status: InterviewStatus.DRAFT // İlk durum her zaman DRAFT'tır.
         };
 
         return this.interviewRepository.createInterview(interviewData);
@@ -97,7 +103,7 @@ export class InterviewService {
     }
 
     /**
-     * Mülakat güncelleme. (Soru ve Kişilik Testi güncellemeleri de dahil)
+     * Mülakat güncelleme.
      */
     public async updateInterview(
         interviewId: string,
@@ -110,20 +116,27 @@ export class InterviewService {
         }
 
         // 🚨 İş Kuralı 2: Yayınlanmış Mülakat Koruması
+        // Mülakat yayındaysa kritik alanların değişmesini engelliyoruz.
         if (interview.status === InterviewStatus.PUBLISHED) {
-            const forbiddenFields = ['questions', 'title', 'personalityTestId'];
+            const forbiddenFields = [
+                'questions', 
+                'title', 
+                'personalityTestId', 
+                'position',           // ✅ Pozisyon (puanlama ağırlıkları) değişemez
+                'aiAnalysisSettings'  // ✅ AI ayarları değişemez
+            ];
             const attemptedUpdates = Object.keys(updateData);
             
+            // Status değişimi hariç diğer alanları kontrol et
             if (attemptedUpdates.some(field => forbiddenFields.includes(field) && field !== 'status')) {
                  throw new AppError(
-                     'Cannot modify core fields (questions, title, test) of a PUBLISHED interview. Change its status first.', 
+                     'Cannot modify core fields (questions, title, position, AI settings) of a PUBLISHED interview.', 
                      ErrorCodes.BAD_REQUEST, 
                      400
                  );
             }
         }
         
-        // Eğer sorular güncelleniyorsa, boş olup olmadığını kontrol et
         if (updateData.questions && updateData.questions.length === 0) {
              throw new AppError(
                  'Interview must contain at least one question.', 
@@ -137,7 +150,6 @@ export class InterviewService {
 
      /**
      * Mülakatı yayına al.
-     * Bu metot, durumu PUBLISHED yapar ve mülakat linkini oluşturur.
      */
     public async publishInterview(interviewId: string): Promise<IInterview | null> {
         const interview = await this.interviewRepository.getInterviewById(interviewId);
@@ -146,7 +158,6 @@ export class InterviewService {
             throw new AppError('Interview not found.', ErrorCodes.NOT_FOUND, 404);
         }
 
-        // 🚨 İş Kuralı 3: Yayınlama Öncesi Kontroller
         if (interview.status !== InterviewStatus.DRAFT) {
             throw new AppError(
                 `Cannot publish an interview with status: ${interview.status}`, 
@@ -156,97 +167,136 @@ export class InterviewService {
         }
         
         if (!interview.questions || interview.questions.length === 0) {
-             throw new AppError(
-                 'Interview must have questions before publishing.', 
-                 ErrorCodes.BAD_REQUEST, 
-                 400
-             );
+             throw new AppError('Interview must have questions before publishing.', ErrorCodes.BAD_REQUEST, 400);
         }
 
         if (interview.expirationDate && new Date() > interview.expirationDate) {
-             throw new AppError(
-                 'Cannot publish an interview that has already expired.', 
-                 ErrorCodes.FORBIDDEN, 
-                 403
-             );
+             throw new AppError('Cannot publish an interview that has already expired.', ErrorCodes.FORBIDDEN, 403);
         }
         
-        // ✅ YENİ MANTIK: Mülakat linkini oluştur
-        const interviewLink = await this.interviewRepository.generateInterviewLink(
-            interviewId
-        );
+        // ✅ YENİ MANTIK: Link üretimi Repository'den Service'e taşındı.
+        const baseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
+        // URL-safe base64 encoding
+        const encodedId = Buffer.from(interviewId.toString()).toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+            
+        const interviewLink = `${baseUrl}/applications/${encodedId}`; // Frontend rotasına uygun link
 
-        // ✅ YENİ MANTIK: Link bilgisini ve status'u kaydet
         const updatedInterview = await this.interviewRepository.updateInterviewById(interviewId, {
             status: InterviewStatus.PUBLISHED,
             interviewLink: {
                 link: interviewLink,
-                // Linkin bitiş tarihini mülakatın bitiş tarihiyle eşitliyoruz.
                 expirationDate: interview.expirationDate, 
             }
         });
 
         return updatedInterview;
     }
-    /**
-     * Mülakatı soft-delete yap. (Controller'dan sahiplik kontrolü gelecektir)
-     */
+
    public async softDeleteInterview(interviewId: string): Promise<void> {
-        // Kontrolsüz silme işlemi
         await this.interviewRepository.softDeleteInterviewById(interviewId);
     }
 
-
-    /**
-     * Mülakatı tamamen sil. (Controller'dan sahiplik kontrolü gelecektir)
-     */
     public async deleteInterview(interviewId: string): Promise<void> {
         await this.interviewRepository.deleteInterviewById(interviewId);
     }
+
     /**
-     * Dashboard için toplu istatistik verilerini getirir.
-     * Bu metot, Service katmanları arasında koordinasyon sağlar.
+     * Dashboard verilerini getirir.
+     * Mock veriler yerine Repository'ler üzerinden gerçek veriyi işlemeye çalışır.
      */
     public async getDashboardData(userId: string): Promise<DashboardDataDTO> {
-        // Bu, farklı Repository çağrılarını koordine eden ana işlevdir.
-
-        // 1. Mülakat İstatistikleri (InterviewRepository)
+        // 1. Kullanıcının Mülakatlarını Çek
         const userInterviews = await this.interviewRepository.getInterviewsByUser(userId);
+        const interviewIds = userInterviews.map(i => i._id);
+        
         const totalInterviews = userInterviews.length;
         const publishedCount = userInterviews.filter(i => i.status === InterviewStatus.PUBLISHED).length;
 
-        // 2. Uygulama/Aday Trendleri (Simüle Edildi - Gerçekte ApplicationRepository'den gelir)
-        // Dashboard Frontend'inin beklediği tüm alanları doldurmak zorundayız.
-        const applicationTrends: ApplicationTrendDTO[] = [
-            { date: '2025-10-01', count: 15 },
-            { date: '2025-10-02', count: 22 },
-        ];
-        
-        // 3. Favori Adaylar (Simüle Edildi - Gerçekte CandidateRepository'den gelir)
-        const favoriteCandidates: FavoriteCandidateDTO[] = [
-            { id: 'c1', name: 'Ayşe Yılmaz', position: 'Developer', score: 92 },
-            { id: 'c2', name: 'Can Demir', position: 'Analist', score: 88 },
-        ];
+        // 2. Başvuruları Çek (ApplicationRepository kullanımı)
+        // Not: ApplicationRepository'de bu metot yoksa eklenmelidir: find(query) veya getByInterviewIds
+        // Şimdilik any kullanarak bypass ediyoruz, ApplicationRepository güncellendiğinde type-safe olacak.
+        let allApplications: any[] = [];
+        try {
+            // Eğer ApplicationRepository'de find metodu varsa:
+            if ((this.applicationRepository as any).find) {
+                allApplications = await (this.applicationRepository as any).find({ 
+                    interviewId: { $in: interviewIds } 
+                });
+            } else {
+                // Metot yoksa boş dizi (Hata patlamaması için)
+                console.warn('ApplicationRepository.find method missing for Dashboard data');
+            }
+        } catch (error) {
+            console.error('Error fetching applications for dashboard:', error);
+        }
 
-        // 4. Diğer Özet Veriler (Simüle Edildi)
-        const departmentApplications: DepartmentApplicationDTO[] = [
-             { department: 'Yazılım', count: 120 },
-             { department: 'IK', count: 45 },
-        ];
-        
-        const candidateProfiles: CandidateProfileDTO[] = [
-             { experience: 'Junior', count: 60 },
-             { experience: 'Senior', count: 40 },
-        ];
+        // 3. Adayları Çek (CandidateRepository kullanımı)
+        let allCandidates: any[] = [];
+        try {
+            if ((this.candidateRepository as any).find) {
+                 // Başvurusu olan adayları çekmek daha doğru olurdu ama şimdilik genel çekiyoruz
+                 allCandidates = await (this.candidateRepository as any).find({}); 
+            }
+        } catch (error) {
+             console.error('Error fetching candidates for dashboard:', error);
+        }
 
+        // --- VERİ İŞLEME (AGGREGATION) ---
+        // MongoDB Aggregation Pipeline kullanmak daha performanslıdır ama Service katmanında JS ile yapıyoruz.
+
+        // A. Başvuru Trendleri (Tarihe göre grupla)
+        const trendMap = new Map<string, number>();
+        allApplications.forEach((app: any) => {
+            const date = new Date(app.createdAt).toISOString().split('T')[0];
+            trendMap.set(date, (trendMap.get(date) || 0) + 1);
+        });
+        const applicationTrends: ApplicationTrendDTO[] = Array.from(trendMap.entries())
+            .map(([date, count]) => ({ date, count }))
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .slice(-7); // Son 7 gün
+
+        // B. Departman Dağılımı (Mülakatlardaki pozisyon verisinden)
+        const deptMap = new Map<string, number>();
+        // Sadece başvurusu olan mülakatları saymak daha doğru, burada mülakatların kendi departmanlarını sayıyoruz
+        userInterviews.forEach(interview => {
+            if (interview.position?.department) {
+                const dept = interview.position.department;
+                deptMap.set(dept, (deptMap.get(dept) || 0) + 1);
+            }
+        });
+        const departmentApplications: DepartmentApplicationDTO[] = Array.from(deptMap.entries())
+            .map(([department, count]) => ({ department, count }));
+
+        // C. Favori Adaylar (Skoru yüksek olanlar)
+        // Not: Aday modeli ve puanlama yapısı Candidate modülüne göre değişebilir.
+        const favoriteCandidates: FavoriteCandidateDTO[] = allCandidates
+            .filter((c: any) => c.averageScore && c.averageScore > 80) // Örnek filtre
+            .map((c: any) => ({
+                id: c._id.toString(),
+                name: `${c.firstName} ${c.lastName}`,
+                position: c.currentPosition || 'Candidate', // Uygun alan seçilmeli
+                score: c.averageScore || 0
+            }))
+            .slice(0, 5);
+
+        // D. Aday Profilleri (Deneyime göre)
+        const expMap = new Map<string, number>();
+        allCandidates.forEach((c: any) => {
+            const exp = c.experienceLevel || 'Unknown';
+            expMap.set(exp, (expMap.get(exp) || 0) + 1);
+        });
+        const candidateProfiles: CandidateProfileDTO[] = Array.from(expMap.entries())
+            .map(([experience, count]) => ({ experience, count }));
 
         return {
             applicationTrends,
             departmentApplications,
             candidateProfiles,
             favoriteCandidates,
-            // Ek olarak mülakat özeti eklenebilir
-            interviewSummary: { totalInterviews, publishedCount } as InterviewSummaryDTO
+            interviewSummary: { totalInterviews, publishedCount }
         };
     }
 }

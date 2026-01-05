@@ -1,33 +1,37 @@
+// src/modules/application/repositories/public-candidate.repository.ts
 
 import { Types } from 'mongoose';
 import InterviewModel, { IInterview } from '../../interview/models/interview.model';
 import ApplicationModel, { IApplication } from '../models/application.model';
 
-export class CandidateRepository {
+export class PublicCandidateRepository { // Sınıf adını dosya ile uyumlu yaptım
 
   /**
-   * Public endpoint için mülakat bilgisi getir.
-   * Gizli alanları hariç tutmak için projection yapıyoruz.
+   * ✅ GÜNCELLENDİ: Public endpoint için mülakat bilgisi getir.
+   * * Değişiklikler:
+   * 1. Status kontrolü (Business Logic) buradan kaldırıldı -> Service'e taşındı.
+   * 2. 'description' ve 'type' alanları eklendi (DTO ile uyumluluk).
    */
   public async getInterviewPublicById(interviewId: string): Promise<IInterview | null> {
     const interview = await InterviewModel.findById(interviewId, {
-      _id: 1,          // ✅ ID'yi döndürüyoruz
+      _id: 1,
       createdAt: 1,
       title: 1,
+      description: 1,        // ✅ YENİ: Adayın açıklamayı görmesi için
+      type: 1,               // ✅ YENİ: Mülakat formatı (async-video vb.)
       expirationDate: 1,
       status: 1,
-      personalityTestId: 1,   // ✅ Kişilik testi ID'si
-      stages: 1,             // ✅ stages bilgisi (ör. { personalityTest: false, questionnaire: true })
+      personalityTestId: 1,
+      stages: 1,
       'questions.questionText': 1,
       'questions.order': 1,
       'questions.duration': 1,
-      // expectedAnswer, keywords vb. alanları EXCLUDE ediyoruz
+      // expectedAnswer, keywords, evaluationCriteria GİZLİ KALIYOR 🔒
     }).exec();
-    if (!interview || interview.status !== 'active' || (interview.expirationDate && interview.expirationDate < new Date())) {
-      return null;  // Mülakat geçersizse null döndür
-    }
-    return  interview;
+
+    return interview;
   }
+
   public async getApplicationByIdWithVerification(
     applicationId: string
   ): Promise<IApplication | null> {
@@ -35,27 +39,30 @@ export class CandidateRepository {
       .select('+candidate.verificationCode')
       .exec();
   }
-   /**
+
+  /**
    * Yeni bir başvuru (Application) oluştur.
    */
-   public async createApplication(data: Partial<IApplication>): Promise<IApplication> {
+  public async createApplication(data: Partial<IApplication>): Promise<IApplication> {
     const application = new ApplicationModel(data);
     return application.save();
   }
 
-    /**
+  /**
    * Adayın başvurusunu getir.
    */
-    public async getApplicationById(applicationId: string): Promise<IApplication | null> {
-      return ApplicationModel.findById(applicationId).exec();
-    }
-    /**
+  public async getApplicationById(applicationId: string): Promise<IApplication | null> {
+    return ApplicationModel.findById(applicationId).exec();
+  }
+
+  /**
    * Adayın kişisel bilgilerini güncelle.
    */
-    public async updateCandidate(applicationId: string, updateData: Partial<IApplication>): Promise<IApplication | null> {
-      return ApplicationModel.findByIdAndUpdate(applicationId, updateData, { new: true }).exec();
-    }
-      /**
+  public async updateCandidate(applicationId: string, updateData: Partial<IApplication>): Promise<IApplication | null> {
+    return ApplicationModel.findByIdAndUpdate(applicationId, updateData, { new: true }).exec();
+  }
+
+  /**
    * Başvuruyu güncelle. (Genel amaçlı)
    */
   public async updateApplicationById(
@@ -74,6 +81,5 @@ export class CandidateRepository {
         'candidate.email': email,
         interviewId: new Types.ObjectId(interviewId),
     }).exec();
-}
-
+  }
 }

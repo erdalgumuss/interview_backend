@@ -1,53 +1,399 @@
-Application Modülü - Başvuru ve Aday İşlemleri
-Bu modül, adayların mülakat başvurularını, OTP doğrulamalarını, kişisel bilgilerinin güncellenmesini ve İK tarafında başvuruların görüntülenmesini yönetir.
+# 📋 Application Module
 
-🎯 Modülün Amaçları
-Adayların mülakat başvurusu yapmasını sağlamak.
+## 📋 Genel Bakış
 
-Telefon doğrulaması (OTP) ile başvuruları güvenceye almak.
+Application modülü, mülakat başvuru sürecinin tamamını yönetir. Adayların başvuru yapması, telefon doğrulaması (OTP), kişisel bilgilerin güncellenmesi, video yanıtlarının kaydedilmesi ve İK tarafından başvuruların incelenmesini kapsar.
 
-Adayın eğitim, deneyim ve yetenek bilgilerini toplamak.
+## 🎯 Modülün Amaçları
 
-İK yetkililerinin başvuruları güvenli şekilde inceleyebilmesini sağlamak.
+- Adayların mülakat başvurusu yapmasını sağlamak
+- Telefon doğrulaması (OTP) ile başvuruları güvenceye almak
+- Adayın eğitim, deneyim ve yetenek bilgilerini toplamak
+- Video yanıtlarının başvuruya eklenmesini yönetmek
+- Kişilik testi yanıtlarının kaydedilmesini sağlamak
+- İK yetkililerinin başvuruları güvenli şekilde inceleyebilmesini sağlamak
+- Başvuru durumu yönetimi ve filtreleme
 
-📚 Kapsadığı Ana Fonksiyonlar
+## 🏗️ Mimari Yapı
 
-Endpoint Açıklama
-GET /api/public/interview/:interviewId Mülakat bilgilerini aday ile paylaşır.
-POST /api/public/ Adayın başvuru yapmasını sağlar. (OTP başlatılır)
-POST /api/public/verifyOtp Adayın OTP kodu ile başvurusunu doğrular.
-POST /api/public/resendOtp Adaya yeni bir OTP kodu gönderir.
-PUT /api/public/update Adayın kişisel bilgilerini günceller.
-GET /api/application/:id (İK) Belirli bir başvurunun detaylarını getirir.
-🛠️ Yapı ve Akış
+```
+application/
+├── controllers/
+│   ├── application.controller.ts   # İK tarafı endpoint'leri
+│   └── candidate.controller.ts     # Aday tarafı endpoint'leri
+├── dtos/
+│   ├── createApplication.dto.ts    # Başvuru oluşturma validasyonu
+│   ├── interviewDetails.dto.ts     # Mülakat detayları
+│   ├── otpVerify.dto.ts            # OTP doğrulama
+│   ├── personalInfo.dto.ts         # Kişisel bilgiler
+│   ├── personalityTest.dto.ts      # Kişilik testi yanıtları
+│   ├── publicInterview.dto.ts      # Public mülakat bilgileri
+│   ├── startApplication.dto.ts     # Başvuru başlatma
+│   ├── supportRequest.dto.ts       # Destek talepleri
+│   ├── updateApplicationStatus.dto.ts # Durum güncelleme
+│   ├── updateCandidate.dto.ts      # Aday güncelleme
+│   └── videoResponse.dto.ts        # Video yanıtı
+├── models/
+│   └── application.model.ts        # MongoDB şeması
+├── repositories/
+│   ├── application.repository.ts   # İK sorgular
+│   └── candidate.repository.ts     # Aday sorgular
+├── routes/
+│   ├── application.routes.ts       # İK rotaları
+│   └── candidate.routes.ts         # Aday rotaları (public)
+├── services/
+│   ├── application.service.ts      # İK iş mantığı
+│   └── candidate.service.ts        # Aday iş mantığı
+└── README.md
+```
 
-1. CandidateController (controllers/candidate.controller.ts)
-   Adayların (kamuya açık) erişebildiği işlemleri yönetir:
+## 🔗 Modül Bağımlılıkları
 
-getPublicInterview: Mülakat bilgilerini getirir.
+### İç Bağımlılıklar
+| Modül | İlişki Türü | Açıklama |
+|-------|-------------|----------|
+| `interview` | Referans | Mülakatı başvuruya bağlar |
+| `video` | Alt Kaynak | VideoResponse modelini oluşturur |
+| `aiAnalysis` | Tetikleyici | Tüm videolar yüklenince AI analizi başlatır |
+| `candidates` | Senkronizasyon | Candidate Pool'a aday bilgisi senkronlar |
+| `personalityTest` | Referans | Kişilik testi sonuçlarını kaydeder |
 
-createApplication: Yeni başvuru oluşturur, OTP gönderir.
+### Dış Bağımlılıklar
+| Servis | Kullanım | Açıklama |
+|--------|----------|----------|
+| BullMQ | Queue | AI analizi için asenkron kuyruk |
+| SMS Gateway | OTP | Telefon doğrulama kodları |
 
-verifyOtp: Adayın telefon numarasını doğrular.
+---
 
-resendOtp: Adaya yeni OTP kodu yollar.
+## 📊 Veri Modeli
 
-updateCandidateDetails: Adayın eğitim, deneyim ve beceri bilgilerini günceller.
+### IApplication Interface
 
-2. ApplicationController (controllers/application.controller.ts)
-   İK tarafı işlemlerini yönetir:
+```typescript
+interface IApplication {
+  _id: ObjectId;
+  interviewId: ObjectId;           // Bağlı mülakat
+  
+  // Aday Profili
+  candidate: {
+    name: string;
+    surname: string;
+    email: string;
+    phone: string;
+    phoneVerified: boolean;
+    verificationCode?: string;     // OTP (hidden)
+    verificationExpiresAt?: Date;
+    kvkkConsent?: boolean;
+  };
+  
+  // Kariyer Bilgileri
+  education: Array<{
+    school: string;
+    degree: string;
+    graduationYear: number;
+  }>;
+  
+  experience: Array<{
+    company: string;
+    position: string;
+    duration: string;
+    responsibilities: string;
+  }>;
+  
+  skills: {
+    technical: string[];
+    personal: string[];
+    languages: string[];
+  };
+  
+  documents: {
+    resume?: string;
+    certificates?: string[];
+    socialMediaLinks?: string[];
+  };
+  
+  // Durum Yönetimi
+  status: ApplicationStatus;
+  
+  // Kişilik Testi
+  personalityTestResults?: {
+    testId: ObjectId;
+    completed: boolean;
+    scores?: {
+      openness?: number;
+      conscientiousness?: number;
+      extraversion?: number;
+      agreeableness?: number;
+      neuroticism?: number;
+    };
+    personalityFit?: number;
+  };
+  
+  // AI Analiz Sonuçları
+  aiAnalysisResults: ObjectId[];
+  latestAIAnalysisId?: ObjectId;
+  generalAIAnalysis?: {
+    overallScore?: number;
+    technicalSkillsScore?: number;
+    communicationScore?: number;
+    problemSolvingScore?: number;
+    personalityMatchScore?: number;
+    strengths?: string[];
+    areasForImprovement?: Array<{ area, recommendedAction }>;
+    recommendation?: string;
+  };
+  
+  // Video Yanıtları
+  responses: Array<{
+    questionId: ObjectId;
+    videoUrl?: string;
+    textAnswer?: string;
+    duration?: number;
+  }>;
+  
+  // Diğer
+  allowRetry: boolean;
+  maxRetryAttempts?: number;
+  retryCount?: number;
+  supportRequests: Array<{ timestamp, message }>;
+  
+  timestamps: { createdAt, updatedAt };
+}
+```
 
-getApplicationById: Yalnızca mülakatı oluşturmuş kullanıcı başvuru detayını görebilir.
+### ApplicationStatus Enum
 
-3. Service Katmanı
-   candidate.service.ts: Aday tarafı işlemlerini yürütür (başvuru oluşturma, otp doğrulama, detay güncelleme).
+```typescript
+type ApplicationStatus = 
+  | 'pending'                    // Başvuru bekliyor
+  | 'awaiting_video_responses'   // Video bekleniyor
+  | 'in_progress'                // İşlemde
+  | 'awaiting_ai_analysis'       // AI analizi bekleniyor
+  | 'analysis_completed'         // Analiz tamamlandı
+  | 'completed'                  // Tamamlandı
+  | 'rejected'                   // Reddedildi
+  | 'accepted';                  // Kabul edildi
+```
 
-application.service.ts: İK tarafı başvuru erişim kontrolü ve detay çekimi.
+---
 
-4. Repository Katmanı
-   candidate.repository.ts: Aday başvuru kayıtlarını ve güncellemeleri yapar.
+## 🔄 İş Akışları
 
-application.repository.ts: İK tarafı sorgularını (başvuru detayları, listeler) yönetir.
+### 1. Aday Başvuru Akışı
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Public Form    │────▶│  createApplication │──▶│   OTP Gönder    │
+│  (GET interview)│     │  status: pending    │   │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Detay Güncelle │◀────│  Token Oluştur  │◀────│   OTP Doğrula   │
+│  (education,    │     │  (JWT Candidate)│     │   phoneVerified │
+│  experience)    │     └─────────────────┘     └─────────────────┘
+└─────────────────┘
+        │
+        ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Video Yükle    │────▶│  Tüm Videolar   │────▶│  AI Analizi     │
+│  (her soru için)│     │  Yüklendi mi?   │     │  Başlat         │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │  Kişilik Testi  │
+                                                │  (Opsiyonel)    │
+                                                └─────────────────┘
+```
+
+### 2. İK Başvuru Yönetimi Akışı
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Başvuru Liste  │────▶│  Filtrele       │────▶│  Detay Görüntüle│
+│  (getAllApps)   │     │  (status, score)│     │  (getById)      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │  Durum Güncelle │
+                                                │  (accept/reject)│
+                                                └─────────────────┘
+```
+
+---
+
+## 📡 API Endpoints
+
+### Aday (Public) Endpoints
+
+| Method | Endpoint | Açıklama | Auth |
+|--------|----------|----------|------|
+| `GET` | `/api/public/interview/:interviewId` | Mülakat bilgilerini getir | - |
+| `POST` | `/api/public/` | Başvuru oluştur, OTP gönder | - |
+| `POST` | `/api/public/verifyOtp` | OTP doğrula, token al | - |
+| `POST` | `/api/public/resendOtp` | Yeni OTP gönder | - |
+| `PUT` | `/api/public/update` | Aday bilgilerini güncelle | Candidate |
+| `POST` | `/api/public/video/response` | Video yanıtı kaydet | Candidate |
+| `POST` | `/api/public/personality-test/response` | Kişilik testi yanıtı | Candidate |
+
+### İK (Protected) Endpoints
+
+| Method | Endpoint | Açıklama | Auth |
+|--------|----------|----------|------|
+| `GET` | `/api/applications/` | Başvuruları listele/filtrele | HR |
+| `GET` | `/api/applications/:id` | Başvuru detayı | HR |
+| `PATCH` | `/api/applications/:id/status` | Durum güncelle | HR |
+
+---
+
+## 🔧 Service Metodları
+
+### CandidateService
+
+| Metod | Parametre | Dönüş | Açıklama |
+|-------|-----------|-------|----------|
+| `getPublicInterview` | `interviewId` | `GetPublicInterviewDTO` | Public mülakat bilgisi |
+| `createApplication` | `CreateApplicationDTO` | `IApplication` | Başvuru oluştur + OTP |
+| `verifyOtp` | `VerifyOtpDTO` | `{ token, application }` | OTP doğrula |
+| `resendOtp` | `applicationId` | `{ expiresAt }` | Yeni OTP gönder |
+| `updateCandidateDetails` | `UpdateCandidateDTO` | `IApplication` | Aday bilgisi güncelle |
+| `saveVideoResponse` | `VideoResponseDTO, applicationId` | `IApplication` | Video yanıtı kaydet |
+| `savePersonalityTestResponse` | `PersonalityTestResponseDTO, applicationId` | `IApplication` | Test yanıtı kaydet |
+
+### ApplicationService
+
+| Metod | Parametre | Dönüş | Açıklama |
+|-------|-----------|-------|----------|
+| `getApplicationById` | `id, userId` | `IApplication` | Başvuru detayı (yetkili) |
+| `getAllApplications` | `filters, userId` | `{ applications, total, page }` | Filtrelenmiş liste |
+| `updateApplicationStatus` | `id, status, userId` | `IApplication` | Durum güncelle |
+
+---
+
+## 📦 DTO Yapıları
+
+### CreateApplicationDTO
+
+```typescript
+interface CreateApplicationDTO {
+  interviewId: string;
+  name: string;
+  surname: string;
+  email: string;
+  phone: string;
+  kvkkConsent: boolean;
+}
+```
+
+### UpdateCandidateDTO
+
+```typescript
+interface UpdateCandidateDTO {
+  applicationId: string;
+  education?: Array<{ school, degree, graduationYear }>;
+  experience?: Array<{ company, position, duration, responsibilities }>;
+  skills?: { technical[], personal[], languages[] };
+}
+```
+
+### VideoResponseDTO
+
+```typescript
+interface VideoResponseDTO {
+  questionId: string;
+  videoUrl: string;
+  duration: number;
+  textAnswer?: string;
+  aiAnalysisRequired?: boolean;
+}
+```
+
+---
+
+## 🛡️ Middleware'ler
+
+| Middleware | Kullanım | Açıklama |
+|------------|----------|----------|
+| `authenticateCandidate` | Aday endpoint'leri | JWT ile aday doğrulama |
+| `authenticate` | İK endpoint'leri | HR kullanıcı doğrulama |
+| `rateLimitMiddleware` | Public endpoint'ler | DDoS koruması |
+| `validateRequest` | Tüm POST/PUT | DTO validasyonu |
+
+### Rate Limit Ayarları
+
+| Endpoint | Window | Max Request |
+|----------|--------|-------------|
+| `POST /` (başvuru) | 10 dakika | 3 |
+| `POST /verifyOtp` | 5 dakika | 5 |
+| `POST /resendOtp` | 5 dakika | 3 |
+
+---
+
+## 🔐 Güvenlik
+
+1. **OTP Güvenliği**
+   - 6 haneli rastgele kod
+   - 10 dakika geçerlilik
+   - Kullanıldıktan sonra silinir
+   - Rate limiting ile koruma
+
+2. **Yetki Kontrolü**
+   - İK sadece kendi mülakatlarındaki başvuruları görebilir
+   - Aday token'ı ile kimlik doğrulama
+   - KVKK onayı zorunlu
+
+3. **Veri Gizliliği**
+   - `verificationCode` select: false ile gizli
+   - Hassas bilgiler log'lanmaz
+
+---
+
+## 📈 Önemli İş Kuralları
+
+1. **Aynı E-posta Kontrolü**: Bir aday aynı mülakata birden fazla başvuramaz
+2. **Mülakat Durumu**: Sadece `published` veya `active` mülakata başvuru yapılabilir
+3. **Süresi Dolmuş Mülakat**: Expired mülakata başvuru engellenir
+4. **Video Tamamlama**: Tüm sorular cevaplanınca AI analizi otomatik başlar
+5. **Candidate Pool Sync**: Her başvuru candidate havuzuna senkronize edilir
+
+---
+
+## 🧪 Test Senaryoları
+
+| Senaryo | Açıklama | Beklenen Sonuç |
+|---------|----------|----------------|
+| Başarılı Başvuru | Geçerli form + OTP | Token döner |
+| Duplicate Başvuru | Aynı email + interview | 400 Error |
+| Expired OTP | 10 dk sonra doğrulama | Yeni OTP gönderilir |
+| Yetkisiz Erişim | Başka HR'ın başvurusu | 403 Forbidden |
+| Video Upload | Tüm sorular cevaplandı | AI analizi başlar |
+
+---
+
+## 📝 Versiyon Notları
+
+### v2.0 (Güncel)
+- Video yanıtı kaydetme eklendi
+- Kişilik testi entegrasyonu
+- Candidate Pool senkronizasyonu
+- AI analizi tetikleme
+
+### v1.0
+- Temel başvuru akışı
+- OTP doğrulama
+- İK başvuru görüntüleme
+
+---
+
+## 🔗 İlgili Dokümantasyon
+
+- [AI Analysis Module](../aiAnalysis/README.md)
+- [Interview Module](../interview/README.md)
+- [Candidates Module](../candidates/README.md)
+- [Video Module](../video/README.md)
 
 🧩 Modülde Kullanılan Yapılar
 

@@ -1,15 +1,40 @@
 import { Request, Response, NextFunction } from 'express';
 import { InterviewService } from '../services/interview.service';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
+import { UpdateInterviewDTO } from '../dtos/updateInterview.dto';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-import { InterviewStatus } from '../models/interview.model'; 
+import { InterviewStatus, IInterview } from '../models/interview.model'; 
 
 class InterviewController {
     private interviewService: InterviewService;
 
     constructor() {
         this.interviewService = new InterviewService();
+    }
+
+    /**
+     * Yardımcı Metot: Mülakat sahipliğini kontrol eder.
+     * Eğer kullanıcı mülakatın sahibi değilse hata fırlatır.
+     */
+    private checkOwnership(interview: IInterview, userId: string): void {
+        const createdBy = interview.createdBy.userId;
+        
+        // Populate edilmişse ._id, değilse kendisi
+        const ownerId = (createdBy as any)._id || createdBy;
+
+        // Mongoose ObjectId karşılaştırması veya String karşılaştırması
+        const isOwner = (ownerId as any).equals 
+            ? (ownerId as any).equals(userId) 
+            : ownerId.toString() === userId;
+
+        if (!isOwner) {
+            throw new AppError(
+                'Forbidden: You do not have permission to access this interview.', 
+                ErrorCodes.UNAUTHORIZED, 
+                403
+            );
+        }
     }
 
     /**
@@ -21,15 +46,12 @@ class InterviewController {
             const userId = req.user?.id as string;
 
             if (!userId) {
-                // Bu durum, genellikle auth middleware tarafından zaten yakalanmalıdır, ancak ek kontrol.
                 return next(new AppError('User authentication failed', ErrorCodes.UNAUTHORIZED, 401));
             }
 
             const newInterview = await this.interviewService.createInterview(body, userId);
             res.status(201).json({ success: true, data: newInterview });
         } catch (error) {
-            // Servis'ten fırlatılan iş mantığı hataları (örneğin: 'Interview must contain at least one question') burada yakalanır.
-            // Bu hataların doğru HTTP kodlarına (400 Bad Request) dönüştürülmesi gerekiyor (Bkz: Sonraki Adım).
             next(error);
         }
     };
@@ -50,8 +72,8 @@ class InterviewController {
         }
     };
 
-  /**
-     * GET /interviews/my - Kullanıcının oluşturduğu mülakatları getir. (Mevcut metot)
+    /**
+     * GET /interviews/my - Kullanıcının oluşturduğu mülakatları getir.
      */
     public getUserInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -69,7 +91,6 @@ class InterviewController {
 
     /**
      * GET /interviews/dashboard - Dashboard verilerini getirir.
-     * Bu metot, DashboardPage'in 404 hatasını çözer.
      */
     public getDashboardData = async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -78,11 +99,7 @@ class InterviewController {
                 throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
             }
 
-            // Service'ten toplu dashboard verisini çek
             const dashboardData = await this.interviewService.getDashboardData(userId);
-            
-            // Frontend'in beklediği yapıda yanıt dön (DashboardDataDTO)
-            // success: true ve tüm istatistik alanları döndürülüyor.
             res.json({ success: true, ...dashboardData }); 
         } catch (error) {
             next(error);
@@ -95,50 +112,30 @@ class InterviewController {
      public getInterviewById = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { id } = req.params;
-            const userId = req.user?.id; // String
+            const userId = req.user?.id;
 
-            // 1. Mülakatı çek
             const interview = await this.interviewService.getInterviewById(id);
 
-            // 2. Mongoose hiç bulamadıysa (deletedAt != null veya ID hatalı)
             if (!interview) {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
             
-            // Kullanıcının ID'si yoksa yetkilendirme hatası fırlatılır (Authenticate middleware'den sonra olmamalı ama kontrol ediyoruz)
             if (!userId) {
                  throw new AppError('Unauthorized access', ErrorCodes.UNAUTHORIZED, 401);
             }
 
-            // 📌 YENİ KONTROL: Kıyaslama yapmadan önce loglama yapalım
-            console.log(`[AUTH CHECK] Current User ID: ${userId}`);
-            console.log(`[AUTH CHECK] Created By ID: ${interview.createdBy.userId.toString()}`);
-            console.log(`[AUTH CHECK] Status: ${interview.status}`);
-            
-            // 3. Gizlilik Kontrolü: Yalnızca sahibi DRAFT mülakatı görebilir.
-            
-            // Mongoose'da kıyaslama yapmanın en güvenli yolu: .equals()
-            // Modelinizdeki createdBy.userId alanı bir ObjectId referansı olduğu için .equals() kullanılmalıdır.
-            const isOwner = (interview.createdBy.userId as any).equals(userId); 
-            
-            // Not: Eğer populate çalıştıysa, interview.createdBy.userId bir tam User objesi olabilir, 
-            // bu durumda interview.createdBy.userId._id.equals(userId) kullanılmalıdır.
-            // Repository'deki populate tanımına bakarsak: .populate('createdBy.userId', ...)
-            // Bu nedenle, createdBy.userId'nin kendisi bir obje olabilir. En güvenli yol, 
-            // eğer obje ise onun _id'sini, değilse doğrudan kendini kıyaslamaktır.
-
-            // Eğer interview.createdBy.userId bir alt nesne ise (populate edilmiş):
-            const ownerIdToCompare = interview.createdBy.userId._id || interview.createdBy.userId;
-            const isOwnerFinal = (ownerIdToCompare as any).equals ? (ownerIdToCompare as any).equals(userId) : ownerIdToCompare.toString() === userId;
-            
-            
-            if (interview.status === InterviewStatus.DRAFT && !isOwnerFinal) {
-                 // 404 döndürerek mülakatın varlığını gizliyoruz.
-                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            // Sahiplik Kontrolü
+            try {
+                this.checkOwnership(interview, userId);
+            } catch (error) {
+                // Eğer sahibi değilse ama mülakat DRAFT ise 404 dön (Gizlilik)
+                // PUBLISHED ise belki aday görüyordur, o yüzden direkt 403 atmıyoruz (Senaryoya göre değişir)
+                // Şimdilik kuralımız: Sahibi değilse detay göremez.
+                if (interview.status === InterviewStatus.DRAFT) {
+                    throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+                }
+                throw error; // Diğer durumlarda 403 fırlat
             }
-            
-            // 📌 LOG: Eğer buraya düşerse başarılı demektir.
-            console.log(`[AUTH CHECK] SUCCESS: User ${userId} is authorized for status ${interview.status}`);
 
             res.json({ success: true, data: interview });
         } catch (error) {
@@ -147,13 +144,12 @@ class InterviewController {
     };
     
     /**
-     * PUT /interviews/:id - Mülakat güncelleme (Başlık, Süre, vb.)
-     * Bu metot artık Soru ve Kişilik Testi güncellemelerini de kapsar.
+     * PUT /interviews/:id - Mülakat güncelleme
      */
     public async updateInterview(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
-            const updateData = req.body;
+            const updateData = req.body as UpdateInterviewDTO;
             const userId = req.user?.id;
     
             if (!userId) {
@@ -165,20 +161,13 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Sahiplik Kontrolü
-            const createdById = (existingInterview.createdBy.userId as any)._id || existingInterview.createdBy.userId;
+            // ✅ Sahiplik kontrolü tek satıra indi
+            this.checkOwnership(existingInterview, userId);
             
-            const isOwner = createdById && (createdById as any).equals 
-                ? (createdById as any).equals(userId) 
-                : createdById.toString() === userId;
-
-            if (!isOwner) { // Sahiplik kontrolü düzeltildi
-                throw new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
-            
-            // Güncelleme işlemi Servis katmanında yapılır
-            const updatedInterview = await this.interviewService.updateInterview(id, updateData);
-    
+            const updatedInterview = await this.interviewService.updateInterview(
+            id, 
+            updateData as unknown as Partial<IInterview>
+            );    
             res.json({ success: true, data: updatedInterview });
         } catch (error) {
             next(error);
@@ -186,7 +175,7 @@ class InterviewController {
     }
     
     /**
-     * DELETE /interviews/:id - Mülakatı soft-delete veya hard-delete yap.
+     * DELETE /interviews/:id - Mülakatı sil.
      */
     public async deleteInterview(req: Request, res: Response, next: NextFunction) {
         try {
@@ -202,19 +191,9 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Populated dökümanda User ID'sini al (._id veya doğrudan userId)
-            const createdById = (interview.createdBy.userId as any)._id || interview.createdBy.userId;
+            // ✅ Sahiplik kontrolü
+            this.checkOwnership(interview, userId);
             
-            // Mongoose'un .equals() metodu veya toString() ile kıyaslama yap
-            const isOwner = createdById && (createdById as any).equals 
-                ? (createdById as any).equals(userId) 
-                : createdById.toString() === userId;
-                
-            if (!isOwner) { // Sahiplik kontrolü düzeltildi
-                throw new AppError('Forbidden: Cannot delete other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
-            
-            // Eğer isOwner TRUE ise silme işlemine devam et
             await this.interviewService.deleteInterview(id);
     
             res.json({ success: true, message: 'Interview deleted successfully' });
@@ -224,7 +203,7 @@ class InterviewController {
     }
 
     /**
-     * POST /interviews/:id/publish - Mülakatı yayınlama (DRAFT -> PUBLISHED).
+     * PATCH /interviews/:id/publish - Mülakatı yayınlama.
      */
     public async publishInterview(req: Request, res: Response, next: NextFunction) {
         try {
@@ -235,33 +214,24 @@ class InterviewController {
                 throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
             }
 
-            // Mülakatı çekme ve Sahiplik Kontrolü
             const interview = await this.interviewService.getInterviewById(id);
             if (!interview) {
                  throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
-            const createdById = (interview.createdBy.userId as any)._id || interview.createdBy.userId;
-            // Eğer createdById bir Mongoose ID objesiyse .equals() kullanılır, değilse toString()
-            const isOwner = createdById && (createdById as any).equals 
-                ? (createdById as any).equals(userId) 
-                : createdById.toString() === userId;
-                if (!isOwner) { // Sahiplik kontrolü düzeltildi
-                throw new AppError('Forbidden: Cannot publish other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
 
-            // Servis'e iş mantığını devret
+            // ✅ Sahiplik kontrolü
+            this.checkOwnership(interview, userId);
+
             const updatedInterview = await this.interviewService.publishInterview(id);
 
             res.json({ success: true, data: updatedInterview });
         } catch (error) {
-            // Servis'ten gelen iş mantığı hataları (400 Bad Request) burada yakalanır
             next(error); 
         }
     }
 
     /**
-     * POST /interviews/:id/link - Mülakat linkini yeniden oluşturma/güncelleme.
-     * Link oluşturma mantığı Servis'te olmalıdır. Burada sadece veriyi güncelleyen genel update kullanıldı.
+     * PATCH /interviews/:id/link - Mülakat süresini uzatma / link güncelleme.
      */
     public async generateInterviewLink(req: Request, res: Response, next: NextFunction) {
         try {
@@ -278,16 +248,17 @@ class InterviewController {
                 return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
             }
             
-            // Sahiplik Kontrolü
-          
+            // ✅ Sahiplik kontrolü
+            this.checkOwnership(interview, userId);
 
-            // Link oluşturma mantığı burada (Controller) olduğu için bir risk taşır.
-            // Bu mantık Servis'e taşınmalıdır.
-            const link = `https://localhost:3001/application/${id}`;
+            // ⚠️ DÜZELTME: Linki yeniden oluşturmuyoruz, mevcut linki koruyup sadece süreyi güncelliyoruz.
+            // Link string'i ID'ye bağlı olduğu için değişmez.
+            const currentLink = interview.interviewLink?.link;
+
             const updatedInterview = await this.interviewService.updateInterview(id, {
                 interviewLink: {
-                    link,
-                    expirationDate: expirationDate ? new Date(expirationDate) : interview.interviewLink.expirationDate, // Süre verilmezse eskisini koru
+                    link: currentLink, // Mevcut linki koru
+                    expirationDate: expirationDate ? new Date(expirationDate) : interview.interviewLink.expirationDate, 
                 }
             });
 

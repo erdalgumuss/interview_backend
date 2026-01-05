@@ -13,11 +13,13 @@ export class InterviewRepository {
 
   /**
    * ID ile mülakatı getir.
+   * Silinmemiş (Soft delete olmamış) kayıtları getirir.
    */
   public async getInterviewById(interviewId: string): Promise<IInterview | null> {
-    return InterviewModel.findOne({ _id: interviewId, deletedAt: null }) // ❗Silinmiş mülakatlar hariç
+    return InterviewModel.findOne({ _id: interviewId, deletedAt: null }) 
       .populate('createdBy.userId', 'email firstName lastName')
-      .populate('personalityTestId', 'title')
+      // Eğer PersonalityTest modeli varsa title'ını getir, yoksa hata vermez null döner
+      .populate('personalityTestId', 'title') 
       .exec();
   }
 
@@ -25,14 +27,18 @@ export class InterviewRepository {
    * Kullanıcının oluşturduğu tüm mülakatları getir (silinmemişler).
    */
   public async getInterviewsByUser(userId: string): Promise<IInterview[]> {
-    return InterviewModel.find({ 'createdBy.userId': userId, deletedAt: null }).exec();
+    return InterviewModel.find({ 'createdBy.userId': userId, deletedAt: null })
+      .sort({ createdAt: -1 }) // En yeniden eskiye sıralama (UX için iyi olur)
+      .exec();
   }
 
   /**
    * Tüm mülakatları getir (Admin yetkisiyle, silinmemişler).
    */
   public async getAllInterviews(): Promise<IInterview[]> {
-    return InterviewModel.find({ deletedAt: null }).exec();
+    return InterviewModel.find({ deletedAt: null })
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   /**
@@ -43,44 +49,29 @@ export class InterviewRepository {
     updateData: Partial<IInterview>
   ): Promise<IInterview | null> {
     return InterviewModel.findOneAndUpdate(
-      { _id: interviewId, deletedAt: null }, // ❗Silinmemiş mülakatları güncelle
+      { _id: interviewId, deletedAt: null }, // Sadece silinmemişleri güncelle
       updateData,
-      { new: true }
+      { new: true } // Güncellenmiş veriyi döndür
     ).exec();
   }
 
   /**
    * Mülakatı soft-delete yöntemiyle sil.
+   * Veriyi silmez, sadece deletedAt tarihini atar.
    */
   public async softDeleteInterviewById(interviewId: string): Promise<IInterview | null> {
     return InterviewModel.findOneAndUpdate(
-      { _id: interviewId, deletedAt: null }, // ❗Silinmemiş olanı sil
+      { _id: interviewId, deletedAt: null },
       { deletedAt: new Date() },
       { new: true }
     ).exec();
   }
 
   /**
-   * Mülakatı tamamen sil.
+   * Mülakatı tamamen sil (Hard Delete).
+   * Veritabanından fiziksel olarak kaldırır.
    */
   public async deleteInterviewById(interviewId: string): Promise<IInterview | null> {
     return InterviewModel.findByIdAndDelete(interviewId).exec();
-  }
-
-  /**
-   * Mülakat için link üretme (uuid + base64 URL)
-   */
-  public async generateInterviewLink(interviewId: string): Promise<string> {
-    const baseUrl = process.env.FRONTEND_BASE_URL || "https://yourfrontend.com/interview";
-    const encodedId = Buffer.from(interviewId).toString('base64url'); // URL güvenliği için
-    return `${baseUrl}/${encodedId}`;
-  }
-
-  /**
-   * ID ile mülakat linkini al.
-   */
-  public async getInterviewLink(interviewId: string): Promise<string | null> {
-    const interview = await InterviewModel.findOne({ _id: interviewId, deletedAt: null });
-    return interview?.interviewLink?.link || null;
   }
 }

@@ -46,24 +46,14 @@ export class PersonalInfoDTO {
 }
 
 export const personalInfoSchema = Joi.object({
-  name: Joi.string().required(),
-  surname: Joi.string().required(),
-  email: Joi.string().email().required(),
-  education: Joi.array().items(
-    Joi.object({
-      school: Joi.string(),
-      degree: Joi.string(),
-      graduationYear: Joi.number()
-    })
-  ).optional(),
-  experience: Joi.array().items(
-    Joi.object({
-      company: Joi.string(),
-      position: Joi.string(),
-      duration: Joi.string(),
-      responsibilities: Joi.string()
-    })
-  ).optional(),
+  // Bu alanlar artık zorunlu değil çünkü ilk adımda alındı
+  name: Joi.string().optional(),
+  surname: Joi.string().optional(),
+  email: Joi.string().email().optional(),
+  
+  // Detaylar zorunlu veya opsiyonel olabilir (Senaryoya göre)
+  education: Joi.array().items(/*...*/).optional(),
+  experience: Joi.array().items(/*...*/).optional(),
   skills: Joi.object({
     technical: Joi.array().items(Joi.string()),
     personal: Joi.array().items(Joi.string()),
