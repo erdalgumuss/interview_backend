@@ -102,7 +102,7 @@ class PublicCandidateController { // ✅ İsim güncellendi
       res.status(200).json({
         success: true,
         data: {
-          applicationId: response.application._id,
+          application: response.application,
           status: response.application.status,
           phoneVerified: response.application.candidate.phoneVerified,
           token: response.token, // Frontend bu token'ı saklamalı

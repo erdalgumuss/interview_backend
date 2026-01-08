@@ -21,6 +21,7 @@ export class PublicCandidateRepository {
       status: 1,
       personalityTestId: 1,  // Test var mı kontrolü için
       stages: 1,
+      'questions._id': 1,
       'questions.questionText': 1,
       'questions.order': 1,
       'questions.duration': 1,

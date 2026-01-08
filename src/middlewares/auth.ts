@@ -65,11 +65,12 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
 }
 
 
-// Aday doğrulama
+// Aday doğrulama - DÜZELTİLMİŞ HALİ
 export const authenticateCandidate = (req: Request, res: Response, next: NextFunction) => {
     try {
         let token: string | undefined;
 
+        // 1. Token Çıkarma
         if (req.cookies?.access_token) {
             token = req.cookies.access_token;
         } else if (req.headers.authorization?.startsWith('Bearer ')) {
@@ -81,6 +82,7 @@ export const authenticateCandidate = (req: Request, res: Response, next: NextFun
             return next(new AppError('Authorization token missing', ErrorCodes.UNAUTHORIZED, 401));
         }
 
+        // 2. Token Doğrulama
         const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { applicationId: string };
 
         if (!decoded.applicationId) {
@@ -88,7 +90,17 @@ export const authenticateCandidate = (req: Request, res: Response, next: NextFun
             return next(new AppError('Invalid token', ErrorCodes.UNAUTHORIZED, 401));
         }
 
-        req.body.applicationId = decoded.applicationId;
+        // 3. ✅ DÜZELTME: ID'yi req.user'a atıyoruz (GET istekleri için kritik!)
+        req.user = {
+            id: decoded.applicationId,
+            role: 'candidate' // Interface gereği bir rol atadık
+        };
+
+        // Geriye dönük uyumluluk için (bazı controllerlar body'den okuyorsa diye) burayı da tutabiliriz
+        if (req.method !== 'GET') {
+            req.body.applicationId = decoded.applicationId;
+        }
+
         next();
     } catch (err) {
         console.error('❌ Candidate authentication failed:', err);

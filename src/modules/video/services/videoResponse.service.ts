@@ -20,7 +20,6 @@ export class VideoResponseService {
     constructor() {
         this.videoResponseRepository = new VideoResponseRepository();
         
-        // ✅ S3 Client Başlatma (Env değişkenlerinden okur)
         this.s3Client = new S3Client({
             region: process.env.AWS_REGION || 'eu-central-1',
             credentials: {
@@ -32,45 +31,76 @@ export class VideoResponseService {
     }
 
     /**
-     * ✅ YENİ METOT: Frontend için güvenli yükleme URL'i oluşturur.
-     * Bu URL ile frontend, videoyu direkt S3'e atar.
+     * ✅ GÜNCELLENDİ: 'q-0' formatını destekleyen Upload URL Üretici
      */
     public async getUploadUrl(
         applicationId: string, 
         questionId: string, 
         contentType: string = 'video/webm'
-    ): Promise<{ uploadUrl: string; videoKey: string }> { // videoUrl yerine videoKey dönüyoruz
+    ): Promise<{ uploadUrl: string; videoKey: string; questionId: string }> {
         
-        // 1. Validasyonlar
-        if (!Types.ObjectId.isValid(applicationId) || !Types.ObjectId.isValid(questionId)) {
-            throw new AppError('Invalid ID format', ErrorCodes.BAD_REQUEST, 400);
+        // 1. Validasyon: Sadece Application ID'yi katı kontrol et
+        if (!Types.ObjectId.isValid(applicationId)) {
+            throw new AppError('Invalid application ID format', ErrorCodes.BAD_REQUEST, 400);
         }
 
-        // 2. Dosya yolu (Key) oluşturma
-        // Örnek: interviews/{appId}/{questionId}_{timestamp}.webm
+        let finalQuestionId = questionId;
+
+        // 2. Question ID Kontrolü ve Fallback Mekanizması
+        if (!Types.ObjectId.isValid(questionId)) {
+            // Eğer ID 'q-0' formatındaysa çözümle
+            if (questionId.startsWith('q-')) {
+                const questionIndex = parseInt(questionId.split('-')[1]);
+
+                // Başvuruyu bul
+                const application = await ApplicationModel.findById(applicationId);
+                if (!application) throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
+
+                // Mülakatı bul
+                const interview = await InterviewModel.findById(application.interviewId);
+                if (!interview) throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+
+                // İlgili indexteki soruyu al
+                const question = interview.questions[questionIndex];
+
+                if (question && question._id) {
+                    finalQuestionId = question._id.toString(); // Gerçek ID'yi bulduk
+                } else {
+                    // Veritabanında bile ID yoksa geçici ID üret (Patlamaması için)
+                    console.warn(`⚠️ Soru index ${questionIndex} için ID bulunamadı, geçici ID üretiliyor.`);
+                    finalQuestionId = new Types.ObjectId().toString();
+                }
+            } else {
+                throw new AppError('Invalid Question ID format', ErrorCodes.BAD_REQUEST, 400);
+            }
+        }
+
+        // 3. Dosya yolu (Key) oluşturma
+        // interviews/{appId}/questions/{REAL_ID}_{timestamp}.webm
         const timestamp = Date.now();
         const extension = contentType.split('/')[1] || 'webm';
-        const videoKey = `interviews/${applicationId}/questions/${questionId}_${timestamp}.${extension}`;
+        const videoKey = `interviews/${applicationId}/questions/${finalQuestionId}_${timestamp}.${extension}`;
 
-        // 3. S3 Komutunu Hazırla
+        // 4. S3 Komutunu Hazırla
         const command = new PutObjectCommand({
             Bucket: this.bucketName,
             Key: videoKey,
             ContentType: contentType,
-            // Opsiyonel: Metadata ekleyebiliriz
             Metadata: {
                 applicationId,
-                questionId
+                questionId: finalQuestionId // Metadata'ya da gerçek ID'yi yazıyoruz
             }
         });
 
         try {
-            // 4. İmzalı URL'i üret (15 dakika geçerli)
+            // 5. İmzalı URL'i üret
             const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 900 });
             
-            // Frontend'e hem yükleme linkini hem de oluşacak dosya yolunu (Key) dönüyoruz.
-            // Frontend yükleme bitince bu 'videoKey'i (veya tam URL'i) bize 'uploadVideoResponse' ile geri gönderecek.
-            return { uploadUrl, videoKey };
+            return { 
+                uploadUrl, 
+                videoKey,
+                questionId: finalQuestionId // Frontend'e gerçek ID'yi geri dönüyoruz ki update edebilsin
+            };
         } catch (error) {
             console.error('S3 Presigned URL Error:', error);
             throw new AppError('Could not generate upload URL', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
@@ -78,69 +108,63 @@ export class VideoResponseService {
     }
 
     /**
-     * ✅ Adayın video yükleme işlemini TEYİT ETMESİ (Metadata Kaydı)
-     * Not: Frontend önce getUploadUrl alır, yükler, sonra buraya gelir.
+     * Adayın video yükleme işlemini TEYİT ETMESİ
      */
     public async uploadVideoResponse(data: UploadVideoResponseDTO) {
+        // Not: Burada da q-0 gelebilir, benzer logic buraya da eklenebilir 
+        // veya frontend getUploadUrl'den dönen 'questionId'yi kullanmalı.
+        // Şimdilik buradaki validasyonu esnetmiyoruz, frontend düzgün ID ile gelmeli.
+        
         const { applicationId, questionId, videoUrl, duration } = data;
 
-        // 🔍 Validasyonlar
         if (!Types.ObjectId.isValid(applicationId)) {
             throw new AppError('Invalid application ID', ErrorCodes.BAD_REQUEST, 400);
         }
+        
         const application = await ApplicationModel.findById(applicationId);
         if (!application) {
             throw new AppError('Application not found', ErrorCodes.NOT_FOUND, 404);
         }
 
+        // Eğer buraya da q-0 geliyorsa hata vermemesi için basit bir kontrol:
         if (!Types.ObjectId.isValid(questionId)) {
-            throw new AppError('Invalid question ID', ErrorCodes.BAD_REQUEST, 400);
-        }
-        // Interview kontrolü...
-        const interview = await InterviewModel.findById(application.interviewId);
-        if (!interview || !interview.questions.some(q => q && q._id && q._id.equals(questionId))) {
-            throw new AppError('Invalid question ID for this interview', ErrorCodes.BAD_REQUEST, 400);
+             throw new AppError('Invalid question ID format during submission', ErrorCodes.BAD_REQUEST, 400);
         }
 
-        // 🔍 URL Kontrolü: Artık kendi S3 bucket linkimiz mi diye kontrol edebiliriz
-        // (Eğer videoUrl tam link ise)
-        /* if (!videoUrl.includes(this.bucketName)) {
-             throw new AppError('Invalid video source', ErrorCodes.BAD_REQUEST, 400);
-        } 
-        */
+        // Interview kontrolü...
+        const interview = await InterviewModel.findById(application.interviewId);
+        // questionId artık gerçek ID olmalı
+        if (!interview || !interview.questions.some(q => q && q._id && q._id.toString() === questionId)) {
+            // Bu kontrolü biraz esnetebiliriz (String karşılaştırma)
+            throw new AppError('Invalid question ID for this interview', ErrorCodes.BAD_REQUEST, 400);
+        }
 
         if (duration <= 0) {
             throw new AppError('Invalid video duration', ErrorCodes.BAD_REQUEST, 400);
         }
 
-        // 🔄 Mükerrer Kontrol
         const alreadyUploaded = await this.videoResponseRepository.getVideoResponseByQuestion(applicationId, questionId);
         if (alreadyUploaded) {
             throw new AppError('Video response for this question already exists', ErrorCodes.CONFLICT, 409);
         }
 
-        // 🔄 Kaydet
         const savedVideoResponse = await this.videoResponseRepository.saveVideoResponse({
             ...data,
             uploadedByCandidate: true,
             status: 'pending',
         });
 
-        // 🎯 Tamamlanma Kontrolü
         const totalQuestions = interview.questions.length;
         const uploadedVideos = await this.videoResponseRepository.getVideoResponsesByApplication({ applicationId });
 
         if (uploadedVideos.length >= totalQuestions) {
-            application.status = 'awaiting_ai_analysis'; // Status güncellendi
+            application.status = 'awaiting_ai_analysis'; 
             await application.save();
         }
 
         return savedVideoResponse;
     }
 
-    /**
-     * ✅ Adayın yüklediği tüm video yanıtlarını getir
-     */
     public async getVideoResponses(data: GetVideoResponsesDTO) {
         const { applicationId } = data;
 
@@ -152,9 +176,6 @@ export class VideoResponseService {
         return this.videoResponseRepository.getVideoResponsesByApplication(data);
     }
 
-    /**
-     * ✅ AI işlenme durumunu güncelle
-     */
     public async updateVideoProcessingStatus(videoId: string, status: 'pending' | 'processed') {
         if (!Types.ObjectId.isValid(videoId)) {
             throw new AppError('Invalid video ID', ErrorCodes.BAD_REQUEST, 400);
