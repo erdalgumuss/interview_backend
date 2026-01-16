@@ -1,25 +1,32 @@
 {
   "compilerOptions": {
     /* Temel Seçenekler */
-    "target": "es2020",                                /* Hangi ECMAScript versiyonuna derleneceği */
-    "module": "commonjs",                              /* Veya "ESNext". Modern Node.js ve ESM için en uygun modül sistemi */
-    "moduleResolution": "node",                    /* Veya "Node", NodeNext, Node modül çözümlemesini kullanır */
-    "rootDir": "./src",                                /* Kaynak dosyaların kök dizini */
-    "outDir": "./dist",                                /* Çıktı (derlenmiş) dosyaların dizini */
-    "esModuleInterop": true,                           /* CommonJS ve ES Modülleri arasındaki uyumluluk için */
-    "forceConsistentCasingInFileNames": true,          /* Büyük/küçük harf tutarlılığı */
-    "strict": true,                                    /* Tüm katı tip denetimlerini etkinleştir */
-    "skipLibCheck": true,                              /* Tip tanımlama dosyalarını kontrol etmeyi atla (Daha hızlı derleme) */
-    
+    "target": "es2020" /* Hangi ECMAScript versiyonuna derleneceği */,
+    "module": "commonjs" /* Veya "ESNext". Modern Node.js ve ESM için en uygun modül sistemi */,
+    "moduleResolution": "node" /* Veya "Node", NodeNext, Node modül çözümlemesini kullanır */,
+    "rootDir": "./src" /* Kaynak dosyaların kök dizini */,
+    "outDir": "./dist" /* Çıktı (derlenmiş) dosyaların dizini */,
+    "esModuleInterop": true /* CommonJS ve ES Modülleri arasındaki uyumluluk için */,
+    "forceConsistentCasingInFileNames": true /* Büyük/küçük harf tutarlılığı */,
+    "strict": true /* Tüm katı tip denetimlerini etkinleştir */,
+    "skipLibCheck": true /* Tip tanımlama dosyalarını kontrol etmeyi atla (Daha hızlı derleme) */,
+
     /* Gelişmiş Seçenekler */
-    "sourceMap": true,                                 /* Hata ayıklama için kaynak haritaları oluştur */
-    "resolveJsonModule": true,                         /* JSON modüllerini içe aktarmaya izin ver */
-    "typeRoots": ["./node_modules/@types", "./src/types"], /* Tip tanımlamalarının aranacağı dizinler */
-    
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "sourceMap": true /* Hata ayıklama için kaynak haritaları oluştur */,
+    "resolveJsonModule": true /* JSON modüllerini içe aktarmaya izin ver */,
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ] /* Tip tanımlamalarının aranacağı dizinler */,
+
     /* Derleme Hedefi */
-    "noImplicitAny": true,                             /* "any" tipinde örtük kullanıma izin verme */
-    "preserveConstEnums": true                         /* Const enum'ları koru */
+    "noImplicitAny": true /* "any" tipinde örtük kullanıma izin verme */,
+    "preserveConstEnums": true /* Const enum'ları koru */
   },
-  "include": ["src/**/*"],                             /* Derlenecek dosyaları tanımla */
-  "exclude": ["node_modules"]                          /* Derlemeden hariç tutulacak dosyaları tanımla */
+  "include": ["src/**/*"] /* Derlenecek dosyaları tanımla */,
+  "exclude": ["node_modules"] /* Derlemeden hariç tutulacak dosyaları tanımla */
 }

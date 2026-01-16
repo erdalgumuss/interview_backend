@@ -1,7 +1,7 @@
 // src/modules/application/dtos/updateApplicationStatus.dto.ts
 
 import Joi from 'joi';
-import { ApplicationStatus } from '../models/application.model';
+import { ApplicationStatus } from '../../models/application.model';
 
 // İK kullanıcısının sadece bu dört ana durumu belirlemesini sağlarız.
 // 'pending' durumunu da kapsayarak İK'nın tekrar incelemeye almasını sağlar.

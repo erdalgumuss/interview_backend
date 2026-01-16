@@ -3,13 +3,17 @@ import { InterviewService } from '../services/interview.service';
 import { CreateInterviewDTO } from '../dtos/createInterview.dto';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-import { InterviewStatus } from '../models/interview.model'; 
+import { IInterview, InterviewStatus } from '../models/interview.model'; 
+import { check } from 'express-validator';
+import { ApplicationService } from '../../application/services/application.service';
 
 class InterviewController {
     private interviewService: InterviewService;
+    private applicationService: ApplicationService;
 
     constructor() {
         this.interviewService = new InterviewService();
+        this.applicationService = new ApplicationService();
     }
 
     /**
@@ -21,8 +25,7 @@ class InterviewController {
             const userId = req.user?.id as string;
 
             if (!userId) {
-                // Bu durum, genellikle auth middleware tarafından zaten yakalanmalıdır, ancak ek kontrol.
-                return next(new AppError('User authentication failed', ErrorCodes.UNAUTHORIZED, 401));
+                throw new AppError('User authentication failed', ErrorCodes.UNAUTHORIZED, 401);
             }
 
             const newInterview = await this.interviewService.createInterview(body, userId);
@@ -40,7 +43,7 @@ class InterviewController {
     public getAllInterviews = async (req: Request, res: Response, next: NextFunction) => {
         try {
             if (req.user?.role !== 'admin') {
-                return next(new AppError('Forbidden: Admin access required', ErrorCodes.UNAUTHORIZED, 403));
+                throw new AppError('Forbidden: Admin access required', ErrorCodes.UNAUTHORIZED, 403);
             }
 
             const interviews = await this.interviewService.getAllInterviews();
@@ -113,10 +116,8 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Sahiplik Kontrolü
-            if (existingInterview.createdBy.userId.toString() !== userId) {
-                throw new AppError('Forbidden: Cannot update other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
+            // Sahiplik Kontrolü (helper method kullanıyor)
+            this.checkOwnership(existingInterview, userId);
             
             // Güncelleme işlemi Servis katmanında yapılır
             const updatedInterview = await this.interviewService.updateInterview(id, updateData);
@@ -144,12 +145,10 @@ class InterviewController {
                 throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
     
-            // Sahiplik Kontrolü
-            if (interview.createdBy.userId.toString() !== userId) {
-                throw new AppError('Forbidden: Cannot delete other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
-    
-            await this.interviewService.deleteInterview(id); // Veya softDeleteInterview(id, userId);
+            // Sahiplik Kontrolü (helper method kullanıyor)
+            this.checkOwnership(interview, userId);
+
+            await this.interviewService.deleteInterview(id);
     
             res.json({ success: true, message: 'Interview deleted successfully' });
         } catch (error) {
@@ -158,7 +157,7 @@ class InterviewController {
     }
 
     /**
-     * POST /interviews/:id/publish - Mülakatı yayınlama (DRAFT -> PUBLISHED).
+     * PATCH /interviews/:id/publish - Mülakatı yayınlama (DRAFT -> PUBLISHED).
      */
     public async publishInterview(req: Request, res: Response, next: NextFunction) {
         try {
@@ -174,9 +173,9 @@ class InterviewController {
             if (!interview) {
                  throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
-            if (interview.createdBy.userId.toString() !== userId) {
-                throw new AppError('Forbidden: Cannot publish other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
+            
+            // Sahiplik Kontrolü (helper method kullanıyor)
+            this.checkOwnership(interview, userId);
 
             // Servis'e iş mantığını devret
             const updatedInterview = await this.interviewService.publishInterview(id);
@@ -188,9 +187,8 @@ class InterviewController {
         }
     }
 
-    /**
-     * POST /interviews/:id/link - Mülakat linkini yeniden oluşturma/güncelleme.
-     * Link oluşturma mantığı Servis'te olmalıdır. Burada sadece veriyi güncelleyen genel update kullanıldı.
+/**
+     * PATCH /interviews/:id/link - Mülakat süresini uzatma / link güncelleme.
      */
     public async generateInterviewLink(req: Request, res: Response, next: NextFunction) {
         try {
@@ -204,30 +202,105 @@ class InterviewController {
             
             const interview = await this.interviewService.getInterviewById(id);
             if (!interview) {
-                return next(new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404));
+                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
             }
             
-            // Sahiplik Kontrolü
-            if (interview.createdBy.userId.toString() !== userId) {
-                throw new AppError('Forbidden: Cannot update link for other user interviews', ErrorCodes.UNAUTHORIZED, 403);
-            }
+            // ✅ Sahiplik kontrolü
+            this.checkOwnership(interview, userId);
 
-            // Link oluşturma mantığı burada (Controller) olduğu için bir risk taşır.
-            // Bu mantık Servis'e taşınmalıdır.
-            const link = `https://localhost:3001/application/${id}`;
+            // ⚠️ DÜZELTME: Linki yeniden oluşturmuyoruz, mevcut linki koruyup sadece süreyi güncelliyoruz.
+            // Link string'i ID'ye bağlı olduğu için değişmez.
+            const currentLink = interview.interviewLink?.link;
+
             const updatedInterview = await this.interviewService.updateInterview(id, {
                 interviewLink: {
-                    link,
-                    expirationDate: expirationDate ? new Date(expirationDate) : interview.interviewLink.expirationDate, // Süre verilmezse eskisini koru
+                    link: currentLink, // Mevcut linki koru
+                    expirationDate: expirationDate ? new Date(expirationDate) : interview.interviewLink.expirationDate, 
                 }
             });
 
             if (!updatedInterview) {
-                return next(new AppError('Failed to update interview', ErrorCodes.INTERNAL_SERVER_ERROR, 500));
+                throw new AppError('Failed to update interview', ErrorCodes.INTERNAL_SERVER_ERROR, 500);
             }
             res.json({ success: true, data: updatedInterview.interviewLink });
         } catch (error) {
             next(error);
+        }
+    }
+
+    /**
+     * GET /interviews/:id/applications - Mülakata ait başvuruları listele
+     * Sadece mülakat sahibi erişebilir.
+     * Query params: ?page=1&limit=10&status=completed&sortBy=createdAt&sortOrder=desc
+     */
+    public async getInterviewApplications(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { id } = req.params;
+            const userId = req.user?.id;
+
+            if (!userId) {
+                throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+            }
+
+            // Mülakatı kontrol et
+            const interview = await this.interviewService.getInterviewById(id);
+            if (!interview) {
+                throw new AppError('Interview not found', ErrorCodes.NOT_FOUND, 404);
+            }
+
+            // Sahiplik kontrolü
+            this.checkOwnership(interview, userId);
+
+            // Query parametreleri
+            const page = parseInt(req.query.page as string) || 1;
+            const limit = parseInt(req.query.limit as string) || 10;
+            const status = req.query.status as string | undefined;
+            const sortBy = (req.query.sortBy as string) || 'createdAt';
+            const sortOrder = (req.query.sortOrder as string) || 'desc';
+
+            // Başvuruları çek
+            const result = await this.applicationService.getApplicationsByInterviewId(
+                id,
+                { page, limit, status, sortBy, sortOrder }
+            );
+
+            res.json({
+                success: true,
+                data: result.applications,
+                meta: {
+                    total: result.total,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(result.total / limit),
+                    interviewTitle: interview.title
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Yardımcı Metot: Mülakat sahipliğini kontrol eder.
+     * Eğer kullanıcı mülakatın sahibi değilse hata fırlatır.
+     */
+    private checkOwnership(interview: IInterview, userId: string): void {
+        const createdBy = interview.createdBy.userId;
+        
+        // Populate edilmişse ._id, değilse kendisi
+        const ownerId = (createdBy as any)._id || createdBy;
+
+        // Mongoose ObjectId karşılaştırması veya String karşılaştırması
+        const isOwner = (ownerId as any).equals 
+            ? (ownerId as any).equals(userId) 
+            : ownerId.toString() === userId;
+
+        if (!isOwner) {
+            throw new AppError(
+                'Forbidden: You do not have permission to access this interview.', 
+                ErrorCodes.UNAUTHORIZED, 
+                403
+            );
         }
     }
 }

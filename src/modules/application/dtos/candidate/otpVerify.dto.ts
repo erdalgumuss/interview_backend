@@ -1,7 +1,7 @@
 // src/modules/application/dtos/otpVerify.dto.ts
 
 import Joi from 'joi';
-import { IApplication } from '../models/application.model';
+import { IApplication } from '../../models/application.model';
 
 export const verifyOtpSchema = Joi.object({
   applicationId: Joi.string().required(),

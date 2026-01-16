@@ -3,13 +3,20 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import AuthService from '../services/auth.service';
 import { registerSchema } from '../dtos/register.dto';
-import { loginSchema, LoginDTO } from '../dtos/login.dto'; // ✅ LoginDTO buradan import ediliyor
-import { resetPasswordSchema, ResetPasswordDTO } from '../dtos/resetPassword.dto'; // ✅ ResetPasswordDTO ve şeması import edildi
+import { loginSchema, LoginDTO } from '../dtos/login.dto';
+import { resetPasswordSchema, ResetPasswordDTO } from '../dtos/resetPassword.dto';
 import { verifyEmailVerificationToken } from '../../../utils/tokenUtils';
 import AuthRepository from '../repositories/auth.repository';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-import { updateProfileSchema, UpdateProfileDTO } from '../dtos/updateProfile.dto'; 
+import { updateProfileSchema, UpdateProfileDTO } from '../dtos/updateProfile.dto';
+import { 
+    AUTH_CONFIG, 
+    getAccessTokenCookieConfig, 
+    getRefreshTokenCookieConfig 
+} from '../../../config/auth.config';
+
+const isProduction = process.env.NODE_ENV === 'production'; 
 
 /**
  * Kullanıcı Kaydı (Register)
@@ -78,7 +85,6 @@ export async function verifyEmail(req: Request, res: Response, next: NextFunctio
  */
 export const login: RequestHandler = async (req, res, next) => {
   try {
-      // 1) Validasyon (LoginDTO tipini kullandı)
       const validatedData: LoginDTO = await loginSchema.validateAsync(req.body);
 
       const clientInfo = {
@@ -86,27 +92,15 @@ export const login: RequestHandler = async (req, res, next) => {
           userAgent: req.headers['user-agent'] || 'Unknown',
       };
 
-      console.log(`🔍 Login Attempt: Email=${validatedData.email}, IP=${clientInfo.ip}, User-Agent=${clientInfo.userAgent}`);
+      console.log(`🔍 Login Attempt: Email=${validatedData.email}, IP=${clientInfo.ip}`);
 
       const { user, accessToken, refreshToken } = await AuthService.loginUser(validatedData, clientInfo);
 
-      // Access tokenı cookie olarak ayarla (10 dakika)
-      res.cookie('access_token', accessToken, {
-          httpOnly: true,
-          secure: process.env.COOKIE_SECURE === 'true',
-          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-          maxAge: 10 * 60 * 1000, // ✅ DÜZELTİLDİ: 10 dakika milisaniye
-          path: '/',
-      });
+      // Access token cookie (15 dakika)
+      res.cookie('access_token', accessToken, getAccessTokenCookieConfig(isProduction));
 
-      // Refresh tokenı cookie olarak ayarla (7 gün)
-      res.cookie('refresh_token', refreshToken, {
-          httpOnly: true,
-          secure: process.env.COOKIE_SECURE === 'true',
-          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-          maxAge: 7 * 24 * 60 * 60 * 1000, 
-          path: '/',
-      });
+      // Refresh token cookie (30 gün)
+      res.cookie('refresh_token', refreshToken, getRefreshTokenCookieConfig(isProduction));
 
       res.json({
           success: true,
@@ -117,9 +111,10 @@ export const login: RequestHandler = async (req, res, next) => {
                   name: user.name,
                   email: user.email,
                   role: user.role,
-                  // Frontend'in beklediği isActive/status alanı eklenebilir
                   isActive: user.isActive, 
-              }
+              },
+              // Frontend için token expiry bilgisi
+              expiresIn: AUTH_CONFIG.ACCESS_TOKEN_EXPIRY_MS,
           },
       });
   } catch (err) {
@@ -166,12 +161,15 @@ export const logout: RequestHandler = async (req, res, next): Promise<void> => {
 /**
  * Access Token Yenileme (Refresh)
  */
+/**
+ * Access Token Yenileme (Refresh)
+ * Enterprise: Sliding window + Token rotation
+ */
 export const refreshAccessToken: RequestHandler = async (req, res, next): Promise<void> => {
   try {
       const refreshToken = req.cookies.refresh_token;
 
       if (!refreshToken) {
-          // 401 döndürerek frontend'in login'e yönlendirmesini sağla
           res.status(401).json({ success: false, message: 'Unauthorized: No refresh token' });
           return;
       }
@@ -184,34 +182,27 @@ export const refreshAccessToken: RequestHandler = async (req, res, next): Promis
       const { accessToken, refreshToken: newRefreshToken } =
           await AuthService.refreshAccessToken(refreshToken, clientInfo);
 
-      // 4) Yeni refresh token varsa cookie'yi güncelle
+      // Yeni refresh token cookie (sliding window: 30 gün daha)
       if (newRefreshToken) {
-          res.cookie('refresh_token', newRefreshToken, {
-              httpOnly: true,
-              secure: process.env.COOKIE_SECURE === 'true',
-              sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-              maxAge: 7 * 24 * 60 * 60 * 1000, 
-              path: '/',
-          });
+          res.cookie('refresh_token', newRefreshToken, getRefreshTokenCookieConfig(isProduction));
       }
 
-      // Yeni access token'ı cookie olarak ayarla
-      res.cookie('access_token', accessToken, {
-          httpOnly: true,
-          secure: process.env.COOKIE_SECURE === 'true',
-          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-          maxAge: 10 * 60 * 1000, 
-          path: '/',
-      });
+      // Yeni access token cookie (15 dakika)
+      res.cookie('access_token', accessToken, getAccessTokenCookieConfig(isProduction));
 
       res.json({
           success: true,
           message: 'Access token refreshed',
+          data: {
+              expiresIn: AUTH_CONFIG.ACCESS_TOKEN_EXPIRY_MS,
+          }
       });
   } catch (err) {
       console.error('❌ Refresh Token Error:', err);
-      // Hata durumunda 401 dönmek en doğru yaklaşımdır.
-      res.status(401).json({ success: false, message: 'Unauthorized: Invalid refresh token' });
+      // Cookie'leri temizle
+      res.clearCookie('refresh_token', { path: '/' });
+      res.clearCookie('access_token', { path: '/' });
+      res.status(401).json({ success: false, message: 'Unauthorized: Session expired' });
   }
 };
 
@@ -221,7 +212,6 @@ export const refreshAccessToken: RequestHandler = async (req, res, next): Promis
  */
 export const requestPasswordReset: RequestHandler = async (req, res, next) => {
     try {
-        // Burada da DTO kullanmak gerekir (requestPasswordReset.dto.ts oluşturulursa)
         const { email } = req.body;
         const result = await AuthService.requestPasswordReset(email);
         res.json(result);
@@ -273,5 +263,45 @@ export const updateProfile: RequestHandler = async (req, res, next) => {
 
     } catch (err: any) {
         next(err); // error middleware'e gönder
+    }
+};
+
+/**
+ * Oturum Açmış Kullanıcı Bilgilerini Getirme (GET /api/profile/me)
+ * @requires authenticate Middleware (req.user'ı sağlar)
+ */
+export const getMe: RequestHandler = async (req, res, next) => {
+    try {
+        // req.user, authenticate middleware'i tarafından set edilmiştir.
+        // req.user'ın tipinin doğru olduğundan emin olmak için req objesinde genişletilmiş User tipini varsayıyoruz.
+        const userId = req.user?.id; 
+
+        if (!userId) {
+            throw new AppError('Kullanıcı doğrulanamadı', ErrorCodes.UNAUTHORIZED, 401);
+        }
+
+        // 1) Service'ten kullanıcıyı ID ile çek
+        const user = await AuthService.getProfileById(userId); 
+
+        if (!user) {
+             throw new AppError('Kullanıcı bulunamadı', ErrorCodes.NOT_FOUND, 404);
+        }
+
+        // 2) HTTP 200 (OK) yanıtı dön
+        // Frontend'in beklediği temel profil verilerini döndürüyoruz.
+        res.status(200).json({
+            success: true,
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role, // Kritik rol bilgisi
+                isActive: user.isActive, 
+                // ... (Diğer gerekli alanlar eklenebilir)
+            },
+        });
+
+    } catch (err: any) {
+        next(err); 
     }
 };

@@ -1,12 +1,16 @@
 import Joi from 'joi';
 
+// Dinamik olarak mezuniyet yılı max değeri belirleniyor
+// Gelecek 6 yıla kadar izin ver (henüz mezun olmamış öğrenciler için)
+const maxGraduationYear = new Date().getFullYear() + 6;
+
+// Body validation için schema (applicationId middleware'den geliyor)
 export const updateCandidateSchema = Joi.object({
-  applicationId: Joi.string().required(),
   education: Joi.array().items(
     Joi.object({
       school: Joi.string().required(),
       degree: Joi.string().required(),
-      graduationYear: Joi.number().min(1950).max(new Date().getFullYear()),
+      graduationYear: Joi.number().min(1950).max(maxGraduationYear),
     })
   ).optional(),
   experience: Joi.array().items(
@@ -26,7 +30,7 @@ export const updateCandidateSchema = Joi.object({
 });
 
 export interface UpdateCandidateDTO {
-  applicationId: string;
+  applicationId: string; // Controller tarafından middleware'den ekleniyor
   education?: {
     school: string;
     degree: string;

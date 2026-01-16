@@ -127,7 +127,7 @@ export class InterviewService {
         return this.interviewRepository.updateInterviewById(interviewId, updateData);
     }
 
-    /**
+  /**
      * Mülakatı yayına al.
      */
     public async publishInterview(interviewId: string): Promise<IInterview | null> {
@@ -137,49 +137,65 @@ export class InterviewService {
             throw new AppError('Interview not found.', ErrorCodes.NOT_FOUND, 404);
         }
 
-        // 🚨 İş Kuralı 3: Yayınlama Öncesi Kontroller
         if (interview.status !== InterviewStatus.DRAFT) {
             throw new AppError(
                 `Cannot publish an interview with status: ${interview.status}`, 
                 ErrorCodes.CONFLICT, 
-                409 // CONFLICT kullanmak daha uygun
+                409
             ); 
         }
         
         if (!interview.questions || interview.questions.length === 0) {
-             throw new AppError(
-                 'Interview must have questions before publishing.', 
-                 ErrorCodes.BAD_REQUEST, 
-                 400
-             );
+             throw new AppError('Interview must have questions before publishing.', ErrorCodes.BAD_REQUEST, 400);
         }
 
         if (interview.expirationDate && new Date() > interview.expirationDate) {
-             throw new AppError(
-                 'Cannot publish an interview that has already expired.', 
-                 ErrorCodes.FORBIDDEN, 
-                 403 // Süresi dolmuş bir şeyi yayınlamak yasaklanmıştır
-             );
+             throw new AppError('Cannot publish an interview that has already expired.', ErrorCodes.FORBIDDEN, 403);
         }
         
-        return this.interviewRepository.updateInterviewById(interviewId, {
-            status: InterviewStatus.PUBLISHED
+        const baseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
+        
+        // ❌ İPTAL: Base64 Encoding şimdilik kapalı.
+        // Frontend doğrudan ID ile API isteği atacağı için şifreleme karmaşıklık yaratır.
+        // İleride 'shortId' veya 'slug' sistemine geçilebilir.
+        /*
+        const encodedId = Buffer.from(interviewId.toString()).toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+        */
+            
+        // ✅ DÜZELTME 1: Rota 'applications' -> 'application' (Frontend klasör adıyla aynı)
+        // ✅ DÜZELTME 2: encodedId -> interviewId (Direkt ID kullanıyoruz)
+        const interviewLink = `${baseUrl}/application/${interviewId}`; 
+
+        const updatedInterview = await this.interviewRepository.updateInterviewById(interviewId, {
+            status: InterviewStatus.PUBLISHED,
+            interviewLink: {
+                link: interviewLink,
+                expirationDate: interview.expirationDate, 
+            }
         });
+
+        return updatedInterview;
     }
 
     /**
      * Mülakatı soft-delete yap. (Controller'dan sahiplik kontrolü gelecektir)
+     * Not: Projede soft delete stratejisi kullanılıyor, hard delete yapılmıyor.
      */
-   public async softDeleteInterview(interviewId: string): Promise<void> {
-        // Kontrolsüz silme işlemi
+    public async deleteInterview(interviewId: string): Promise<void> {
+        const interview = await this.interviewRepository.getInterviewById(interviewId);
+        
+        if (!interview) {
+            throw new AppError('Interview not found.', ErrorCodes.NOT_FOUND, 404);
+        }
+
+        // Soft delete işlemi
         await this.interviewRepository.softDeleteInterviewById(interviewId);
     }
 
 
-    /**
-     * Mülakatı tamamen sil. (Controller'dan sahiplik kontrolü gelecektir)
-     */
-    public async deleteInterview(interviewId: string): Promise<void> {
-        await this.interviewRepository.deleteInterviewById(interviewId);
-    }
+
 }
+    

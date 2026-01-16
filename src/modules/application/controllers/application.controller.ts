@@ -4,7 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ApplicationService } from '../services/application.service';
 import { AppError } from '../../../middlewares/errors/appError';
 import { ErrorCodes } from '../../../constants/errors';
-import { updateApplicationStatusSchema, UpdateApplicationStatusDTO } from '../dtos/updateApplicationStatus.dto'; // ✅ Yeni ekleme
+import { updateApplicationStatusSchema, UpdateApplicationStatusDTO } from '../dtos/hr/updateApplicationStatus.dto'; // ✅ Yeni ekleme
 
 class ApplicationController {
   private applicationService: ApplicationService;
@@ -13,8 +13,15 @@ class ApplicationController {
     this.applicationService = new ApplicationService();
     // ✅ Metotların `this` bağlamını korumak için bind ediyoruz
     this.getApplicationById = this.getApplicationById.bind(this);
-    this.getAllApplications = this.getAllApplications.bind(this); // ✅ Yeni metot
-    this.updateApplicationStatus = this.updateApplicationStatus.bind(this); // ✅ Yeni metot
+    this.getAllApplications = this.getAllApplications.bind(this);
+    this.updateApplicationStatus = this.updateApplicationStatus.bind(this);
+    this.addHRNote = this.addHRNote.bind(this);
+    this.updateHRNote = this.updateHRNote.bind(this);
+    this.deleteHRNote = this.deleteHRNote.bind(this);
+    this.updateHRRating = this.updateHRRating.bind(this);
+    this.updateVideoUploadStatus = this.updateVideoUploadStatus.bind(this);
+    this.resumeApplication = this.resumeApplication.bind(this);
+    this.toggleFavorite = this.toggleFavorite.bind(this);
   }
 
   /**
@@ -107,6 +114,230 @@ class ApplicationController {
     }
   };
 
+  /**
+   * ✅ YENİ: İK Notu Ekle
+   * POST /api/v1/applications/:id/notes
+   */
+  public addHRNote = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      // Type assertion - User modelinde name field'ı olabilir
+      const userName = (req as any).user?.name || (req as any).user?.email || 'HR User';
+      const { content, isPrivate = false } = req.body;
+
+      if (!userId) {
+        throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      }
+
+      if (!content || content.length < 10) {
+        throw new AppError('Not içeriği en az 10 karakter olmalıdır', ErrorCodes.BAD_REQUEST, 400);
+      }
+
+      const application = await this.applicationService.addHRNote(
+        id,
+        userId,
+        userName,
+        content,
+        isPrivate
+      );
+
+      res.status(201).json({
+        success: true,
+        data: application,
+        message: 'İK notu başarıyla eklendi.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * ✅ YENİ: İK Notu Güncelle
+   * PATCH /api/v1/applications/:id/notes/:noteId
+   */
+  public updateHRNote = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id, noteId } = req.params;
+      const userId = req.user?.id;
+      const { content, isPrivate } = req.body;
+
+      if (!userId) {
+        throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      }
+
+      const updates: any = {};
+      if (content !== undefined) updates.content = content;
+      if (isPrivate !== undefined) updates.isPrivate = isPrivate;
+
+      const application = await this.applicationService.updateHRNote(
+        id,
+        noteId,
+        userId,
+        updates
+      );
+
+      res.status(200).json({
+        success: true,
+        data: application,
+        message: 'İK notu başarıyla güncellendi.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * ✅ YENİ: İK Notu Sil
+   * DELETE /api/v1/applications/:id/notes/:noteId
+   */
+  public deleteHRNote = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id, noteId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      }
+
+      const application = await this.applicationService.deleteHRNote(
+        id,
+        noteId,
+        userId
+      );
+
+      res.status(200).json({
+        success: true,
+        data: application,
+        message: 'İK notu başarıyla silindi.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * ✅ YENİ: İK Rating Güncelle
+   * PATCH /api/v1/applications/:id/rating
+   */
+  public updateHRRating = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      const { rating } = req.body;
+
+      if (!userId) {
+        throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      }
+
+      if (!rating || rating < 1 || rating > 5) {
+        throw new AppError('Rating 1-5 arasında olmalıdır', ErrorCodes.BAD_REQUEST, 400);
+      }
+
+      const application = await this.applicationService.updateHRRating(
+        id,
+        rating,
+        userId
+      );
+
+      res.status(200).json({
+        success: true,
+        data: application,
+        message: 'Rating başarıyla güncellendi.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * ✅ YENİ: Video Upload Status Güncelle
+   * PATCH /api/v1/applications/:id/videos/:questionId/status
+   */
+  public updateVideoUploadStatus = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id, questionId } = req.params;
+      const { uploadStatus, uploadError, s3Metadata } = req.body;
+
+      if (!uploadStatus) {
+        throw new AppError('Upload status zorunludur', ErrorCodes.BAD_REQUEST, 400);
+      }
+
+      const application = await this.applicationService.updateVideoUploadStatus(
+        id,
+        questionId,
+        uploadStatus,
+        uploadError,
+        s3Metadata
+      );
+
+      res.status(200).json({
+        success: true,
+        data: application,
+        message: 'Video upload durumu güncellendi.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * ✅ YENİ: Resume Application
+   * POST /api/v1/applications/resume
+   */
+  public resumeApplication = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        throw new AppError('Email zorunludur', ErrorCodes.BAD_REQUEST, 400);
+      }
+
+      const application = await this.applicationService.resumeApplication(email);
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: 'Devam edilebilir başvuru bulunamadı.',
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: application,
+        message: 'Başvuruya devam edebilirsiniz.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * ✅ YENİ: Toggle Favorite (Add/Remove)
+   * POST /api/v1/applications/:id/favorite
+   * DELETE /api/v1/applications/:id/favorite
+   */
+  public toggleFavorite = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      const action = req.method === 'POST' ? 'add' : 'remove';
+
+      if (!userId) {
+        throw new AppError('Unauthorized', ErrorCodes.UNAUTHORIZED, 401);
+      }
+
+      const application = await this.applicationService.toggleFavorite(id, userId, action);
+
+      res.status(200).json({
+        success: true,
+        data: application,
+        message: action === 'add' ? 'Favorilere eklendi.' : 'Favorilerden çıkarıldı.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 export default new ApplicationController();

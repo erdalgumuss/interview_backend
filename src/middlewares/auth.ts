@@ -10,6 +10,7 @@ declare global {
             user?: {
                 id: string;
                 role: string;
+                applicationId?: string; // ✅ Candidate için eklendi
             };
         }
     }
@@ -88,7 +89,13 @@ export const authenticateCandidate = (req: Request, res: Response, next: NextFun
             return next(new AppError('Invalid token', ErrorCodes.UNAUTHORIZED, 401));
         }
 
-        req.body.applicationId = decoded.applicationId;
+        // ✅ req.user set ederek controller'dan erişilebilir hale getiriyoruz
+        req.user = {
+            id: decoded.applicationId,
+            role: 'candidate',
+            applicationId: decoded.applicationId
+        };
+        
         next();
     } catch (err) {
         console.error('❌ Candidate authentication failed:', err);

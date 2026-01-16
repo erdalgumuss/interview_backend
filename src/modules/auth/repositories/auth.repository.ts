@@ -1,6 +1,7 @@
 import UserModel, { IUser } from '../models/user.model';
 import { RegisterDTO } from '../dtos/register.dto';
 import { UpdateProfileDTO } from '../dtos/updateProfile.dto'; // DTO import edildi
+import { QueryOptions } from 'mongoose';
 
 type CreateUserInput = RegisterDTO & Partial<IUser>; 
 
@@ -23,8 +24,8 @@ class AuthRepository {
     /**
      * Kullanıcıyı ID ile bulma
      */
-    async findById(userId: string): Promise<IUser | null> {
-        return UserModel.findById(userId);
+    async findById(userId: string, options?: QueryOptions): Promise<IUser | null> {
+        return UserModel.findById(userId, undefined, options);
     }
 
     /**
